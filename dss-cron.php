@@ -3,7 +3,7 @@
 Plugin Name: DSS Cron
 Plugin URI: https://soderlind.no/dss-cron
 Description: Run wp-cron on all public sites in a multisite network.
-Version: 1.0.2
+Version: 1.0.3
 Author: Per Soderlind
 Author URI: https://soderlind.no
 License: GPL2

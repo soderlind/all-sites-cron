@@ -2,8 +2,8 @@
 Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
-Tested up to: 6.7
-Stable tag: 1.0.2
+Tested up to: 6.3.5
+Stable tag: 1.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,6 +20,10 @@ DSS Cron is a WordPress plugin designed to run wp-cron on all public sites in a 
 3. The plugin will automatically add a custom rewrite rule and tag for the cron endpoint.
 
 == Changelog ==
+
+= 1.0.3 =
+* Fixed version compatibility
+
 
 = 1.0.2 =
 * Updated plugin description and tested up to version.
