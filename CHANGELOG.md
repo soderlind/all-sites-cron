@@ -1,5 +1,12 @@
 ## ⚙️ Changelog
 
+### 1.1.0
+
+- Add JSON response format (default) for `/dss-cron` endpoint; plain text output retained only when using the `?ga` parameter for GitHub Actions formatting.
+- Maintain non‑blocking (fire‑and‑forget) cron dispatch with ultra‑short timeout for faster responses.
+- Suppress canonical 301 redirects for the endpoint to ensure consistent 200 status.
+- Internal refactors / cleanup.
+
 ### 1.0.12
 
 - Refactor error message handling

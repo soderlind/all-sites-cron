@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.7
-Stable tag: 1.0.12
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -91,6 +91,12 @@ add_filter('dss_cron_sites_transient', function($duration) {
 `
 
 == Changelog ==
+
+= 1.1.0 =
+* Add JSON response format (default) for `/dss-cron` (use `?ga` for GitHub Actions plain text output)
+* Non-blocking fire-and-forget cron dispatch retained and refined
+* Prevent canonical 301 redirects for the endpoint
+* Internal refactor / cleanup
 
 = 1.0.12 =
 * Refactor error message handling
