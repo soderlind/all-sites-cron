@@ -1,5 +1,3 @@
-> # [Use DIO Cron instead](https://github.com/soderlind/dio-cron?tab=readme-ov-file#dio-cron)
-
 # DSS Cron
 
 Run wp-cron on all public sites in a multisite network
