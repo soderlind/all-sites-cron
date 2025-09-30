@@ -1,14 +1,17 @@
 # All Sites Cron
 
-Run wp-cron on all public sites in a multisite network (REST API based)
+Run wp-cron on all public sites in a multisite network ([REST API based](#benefits-of-rest-mode)).
 
-> "You could have done this with a simple cron job. Why use this plugin?" I have a cluster of WordPress sites. I did run a shell script calling wp cli, but the race condition was a problem. I needed a way to run wp-cron on all sites without overlapping. This plugin was created to solve that problem.
+> "You could have done this with a simple cron job. Why use this plugin?" 
+> 
+> I have a cluster of WordPress sites. I did run a shell script calling wp cli, but the race condition was a problem. I needed a way to run wp-cron on all sites without overlapping. This plugin was created to solve that problem.
 
 ## 🚀 Quick Start
 
-1. Upload `all-sites-cron` to `/wp-content/plugins/`
-2. Network activate via 'Network->Plugins'
-3. Disable WordPress default cron in `wp-config.php`:
+1. Download [`all-sites-cron.zip`](https://github.com/soderlind/all-sites-cron/releases/latest/download/all-sites-cron.zip)
+2. Upload via `Network > Plugins > Add New > Upload Plugin`
+3. Network Activate the plugin.
+4. Disable WordPress default cron in `wp-config.php`:
    ```php
    define( 'DISABLE_WP_CRON', true );
    ```
@@ -18,6 +21,9 @@ Also available via Composer:
 ```bash
 composer require soderlind/all-sites-cron
 ```
+
+**Updates**
+   * Plugin updates are handled automatically via GitHub. No need to manually download and install updates.
 
 ## 🔧 Configuration
 
@@ -134,7 +140,7 @@ If called again before the cooldown finishes the API returns HTTP 429 with JSON:
 Headers include: `Retry-After: <seconds>`.
 
 
-## Benefits of REST mode (vs. original `/dss-cron` endpoint)
+## Benefits of REST mode
 
 - No rewrite rules to flush: activation is simpler and avoids edge cases with 404s or delayed availability.
 - No unexpected 301 canonical/trailing‑slash redirects: direct, cache‑friendly 200 responses.

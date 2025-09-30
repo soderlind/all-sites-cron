@@ -18,12 +18,15 @@ All Sites Cron (formerly DSS Cron) runs wp-cron across every public site in a mu
 
 == Installation ==
 
-1. Upload the `all-sites-cron` folder to the `/wp-content/plugins/` directory.
-2. Network activate the plugin through the 'Network->Plugins' menu in WordPress.
-3. Disable WordPress default cron in `wp-config.php`:
+1. Download [`all-sites-cron.zip`](https://github.com/soderlind/all-sites-cron/releases/latest/download/all-sites-cron.zip)
+2. Upload via Network > Plugins > Add New > Upload Plugin
+3. Network Activate the plugin.
+4. Disable WordPress default cron in `wp-config.php`:
    ```php
-   define('DISABLE_WP_CRON', true);
+   define( 'DISABLE_WP_CRON', true );
    ```
+
+Plugin updates are handled automatically via GitHub. No need to manually download and install updates.
 
 = Configuration =
 
