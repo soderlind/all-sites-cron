@@ -1,5 +1,14 @@
 ## ⚙️ Changelog
 
+### 1.2.0
+
+- Replace custom rewrite /dss-cron endpoint with REST API route: `GET /wp-json/dss-cron/v1/run`.
+- Preserve GitHub Actions plain text output via `?ga=1` query param.
+- Simplify activation (no rewrite flush needed).
+- Internal refactor: removed template_redirect logic.
+- Documentation updated to reflect REST usage.
+- Add rate limiting (HTTP 429) with filter `dss_cron_rate_limit_seconds` (default 60s) and `Retry-After` header.
+
 ### 1.1.0
 
 - Add JSON response format (default) for `/dss-cron` endpoint; plain text output retained only when using the `?ga` parameter for GitHub Actions formatting.
