@@ -1,5 +1,12 @@
 ## ⚙️ Changelog
 
+### 1.3.0 - 2025-09-30
+
+- Rename plugin from `DSS Cron` (slug: `dss-cron`) to `All Sites Cron` (slug: `all-sites-cron`).
+- Register new REST namespace `all-sites-cron/v1`; keep `dss-cron/v1` as deprecated alias for backward compatibility.
+- Introduce new filter names `all_sites_cron_*` while supporting legacy `dss_cron_*` filters.
+- One-time migration deletes legacy `dss_cron_*` site transients on first load.
+
 ### 1.2.0
 
 - Replace custom rewrite /dss-cron endpoint with REST API route: `GET /wp-json/dss-cron/v1/run`.
