@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.8
-Stable tag: 1.3.2
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,9 +25,17 @@ Usage (JSON):
 GitHub Actions format:
 `https://example.com/wp-json/all-sites-cron/v1/run?ga=1`
 
+Deferred mode (responds immediately, processes in background):
+`https://example.com/wp-json/all-sites-cron/v1/run?defer=1`
+
+Combine parameters:
+`https://example.com/wp-json/all-sites-cron/v1/run?ga=1&defer=1`
+
 Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 - Success: `::notice::Running wp-cron on X sites`
 - Error: `::error::Error message`
+
+Deferred mode (`?defer=1`) returns HTTP 202 immediately and processes in background. Ideal for large networks (100+ sites) and GitHub Actions to prevent timeout errors. Works best with Nginx + PHP-FPM, Apache + mod_fcgid, and most modern hosting.
 
 = Trigger Options =
 
@@ -45,7 +53,7 @@ on:
     - cron: '*/5 * * * *'
 
 env:
-  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1'
+  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1&defer=1'
 
 jobs:
   trigger_cron:
@@ -105,6 +113,15 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 1.4.0 =
+* Add deferred mode with `defer=1` parameter for immediate response and background processing
+* Support for FastCGI (`fastcgi_finish_request()`) on Nginx + PHP-FPM and Apache + mod_fcgid
+* Fallback method for Apache mod_php and other configurations
+* Return HTTP 202 (Accepted) in deferred mode
+* Ideal for large networks (100+ sites) to prevent REST API timeouts
+* Optimized for GitHub Actions and CI/CD pipelines
+* Add comprehensive webserver compatibility documentation
 
 = 1.3.2 =
 * Documentation updates and readme.txt formatting fixes

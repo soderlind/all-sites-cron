@@ -1,5 +1,16 @@
 ## ⚙️ Changelog
 
+### 1.4.0 - 2025-10-01
+
+- **Feature**: Added [deferred mode](DEFERRED-MODE.md) (`?defer=1`) for immediate response with background processing.
+- **Enhancement**: Supports FastCGI (`fastcgi_finish_request()`) for Nginx + PHP-FPM, Apache + mod_fcgid.
+- **Enhancement**: Fallback method for Apache mod_php and other configurations.
+- **Enhancement**: Returns HTTP 202 (Accepted) in deferred mode to indicate async processing.
+- **Performance**: Ideal for large networks (100+ sites) to avoid REST API timeouts.
+- **Compatibility**: Full support for modern hosting environments with PHP-FPM.
+- **Documentation**: Comprehensive deferred mode documentation with webserver compatibility details.
+- **Use Case**: Optimized for GitHub Actions and CI/CD pipelines.
+
 ### 1.3.2 - 2025-09-30
 
 - **Documentation**: Fixed readme.txt formatting to comply with WordPress.org standards.

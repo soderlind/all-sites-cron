@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version: 1.3.2
+ * Version: 1.4.0
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -61,8 +61,15 @@ function all_sites_cron_register_rest(): void {
 		'callback'            => __NAMESPACE__ . '\\all_sites_cron_rest_run',
 		'permission_callback' => '__return_true', // Public like original endpoint.
 		'args'                => [
-			'ga' => [
+			'ga'    => [
 				'description'       => 'GitHub Actions plain text output mode',
+				'type'              => 'boolean',
+				'required'          => false,
+				'sanitize_callback' => 'rest_sanitize_boolean',
+				'default'           => false,
+			],
+			'defer' => [
+				'description'       => 'Deferred mode: respond immediately, process in background',
 				'type'              => 'boolean',
 				'required'          => false,
 				'sanitize_callback' => 'rest_sanitize_boolean',
@@ -77,7 +84,13 @@ function all_sites_cron_register_rest(): void {
 		'callback'            => __NAMESPACE__ . '\\all_sites_cron_rest_run',
 		'permission_callback' => '__return_true',
 		'args'                => [
-			'ga' => [
+			'ga'    => [
+				'type'              => 'boolean',
+				'required'          => false,
+				'sanitize_callback' => 'rest_sanitize_boolean',
+				'default'           => false,
+			],
+			'defer' => [
 				'type'              => 'boolean',
 				'required'          => false,
 				'sanitize_callback' => 'rest_sanitize_boolean',
@@ -99,30 +112,46 @@ function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response
 	}
 
 	// Request locking: prevent concurrent executions.
-	$lock_key = 'all_sites_cron_lock';
-	if ( false !== get_site_transient( $lock_key ) ) {
-		$message       = __( 'Another cron process is currently running. Please try again later.', 'all-sites-cron' );
-		$ga_mode_check = (bool) $request->get_param( 'ga' );
-		if ( $ga_mode_check ) {
-			$txt      = "::warning::{$message}\n";
-			$response = new \WP_REST_Response( $txt, 409 );
-			$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
-			return $response;
-		}
-		return new \WP_Error( 'all_sites_cron_locked', $message, [ 'status' => 409 ] );
-	}
-	// Set lock for 4 minutes maximum.
-	set_site_transient( $lock_key, time(), MINUTE_IN_SECONDS * 4 );
+	$lock_key     = 'all_sites_cron_lock';
+	$lock_timeout = MINUTE_IN_SECONDS * 5; // 5 minutes max execution time.
+	$now          = time();
 
-	// Rate limiting: deny if last run within cooldown window.
-	$cooldown      = (int) apply_filters( 'all_sites_cron_rate_limit_seconds', apply_filters( 'dss_cron_rate_limit_seconds', 60 ) ); // Support legacy filter.
+	// Check if lock exists and if it's stale.
+	$existing_lock = get_site_transient( $lock_key );
+
+	if ( false !== $existing_lock ) {
+		// Lock exists, check if it's stale (older than timeout).
+		if ( ( $now - $existing_lock ) < $lock_timeout ) {
+			// Lock is fresh, another process is running.
+			$message       = __( 'Another cron process is currently running. Please try again later.', 'all-sites-cron' );
+			$ga_mode_check = (bool) $request->get_param( 'ga' );
+			if ( $ga_mode_check ) {
+				$txt      = "::warning::{$message}\n";
+				$response = new \WP_REST_Response( $txt, 409 );
+				$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
+				return $response;
+			}
+			return new \WP_Error( 'all_sites_cron_locked', $message, [ 'status' => 409 ] );
+		}
+		// Lock is stale, log it and continue (will be overwritten).
+		error_log( sprintf( '[All Sites Cron] Stale lock detected and removed (age: %d seconds)', $now - $existing_lock ) );
+	}
+
+	// Set/update the lock with current timestamp.
+	set_site_transient( $lock_key, $now, $lock_timeout );	// Rate limiting: deny if last run within cooldown window.
+	$cooldown      = (int) apply_filters( 'all_sites_cron_rate_limit_seconds', apply_filters( 'dss_cron_rate_limit_seconds', 60 ) );
 	$now_gmt       = time();
 	$last_run      = (int) get_site_transient( 'all_sites_cron_last_run_ts' );
 	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
+
 	if ( $cooldown > 0 && $seconds_since < $cooldown ) {
+		// Release lock before returning!
+		delete_site_transient( $lock_key );
+
 		$retry_after = $cooldown - $seconds_since;
 		$message     = sprintf( __( 'Rate limited. Try again in %d seconds.', 'all-sites-cron' ), $retry_after );
 		$ga_mode_tmp = (bool) $request->get_param( 'ga' );
+
 		if ( $ga_mode_tmp ) {
 			$txt      = "::error::{$message}\n";
 			$response = new \WP_REST_Response( $txt, 429 );
@@ -130,6 +159,7 @@ function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response
 			$response->header( 'Retry-After', (string) $retry_after );
 			return $response;
 		}
+
 		$payload  = [
 			'success'      => false,
 			'error'        => 'rate_limited',
@@ -144,19 +174,80 @@ function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response
 		return $response;
 	}
 
-	$ga_mode = (bool) $request->get_param( 'ga' );
+	$ga_mode    = (bool) $request->get_param( 'ga' );
+	$defer_mode = (bool) $request->get_param( 'defer' );
+
 	if ( function_exists( 'ignore_user_abort' ) ) {
 		ignore_user_abort( true );
 	}
-	$result = all_sites_run_cron_on_all_sites();
-	// Store last successful (attempted) run timestamp regardless of success to enforce cooldown.
-	set_site_transient( 'all_sites_cron_last_run_ts', $now_gmt, $cooldown > 0 ? $cooldown : 60 );
-	// Release the lock.
-	delete_site_transient( 'all_sites_cron_lock' );
 
-	// Log errors if any.
-	if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
-		error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
+	// Deferred mode: respond immediately, process in background.
+	if ( $defer_mode ) {
+		// Send immediate response based on mode.
+		if ( $ga_mode ) {
+			$txt      = "::notice::Cron job queued for background processing\n";
+			$response = new \WP_REST_Response( $txt, 202 );
+			$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
+		} else {
+			$payload  = [
+				'success'   => true,
+				'status'    => 'queued',
+				'message'   => __( 'Cron job queued for background processing', 'all-sites-cron' ),
+				'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
+				'mode'      => 'deferred',
+			];
+			$response = new \WP_REST_Response( $payload, 202 );
+		}
+
+		// Close connection and continue processing (webserver dependent).
+		all_sites_cron_close_connection_and_continue( $response );
+
+		// Wrap in try-catch to ensure lock is always released.
+		try {
+			// Now process in background after response is sent.
+			$result = all_sites_run_cron_on_all_sites();
+
+			// Store last run timestamp.
+			set_site_transient( 'all_sites_cron_last_run_ts', $now_gmt, $cooldown > 0 ? $cooldown : 60 );
+
+			// Log errors if any.
+			if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
+				error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
+			} else {
+				error_log( sprintf( '[All Sites Cron] Deferred execution completed: %d sites processed', $result[ 'count' ] ?? 0 ) );
+			}
+		} catch (\Exception $e) {
+			error_log( sprintf( '[All Sites Cron] Exception in deferred mode: %s', $e->getMessage() ) );
+		} finally {
+			// Always release the lock, even if exception occurs.
+			delete_site_transient( $lock_key );
+		}
+
+		// Exit to prevent any further output.
+		exit;
+	}
+
+	// Standard synchronous mode - wrap in try-catch.
+	try {
+		$result = all_sites_run_cron_on_all_sites();
+
+		// Store last successful (attempted) run timestamp.
+		set_site_transient( 'all_sites_cron_last_run_ts', $now_gmt, $cooldown > 0 ? $cooldown : 60 );
+
+		// Log errors if any.
+		if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
+			error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
+		}
+	} catch (\Exception $e) {
+		error_log( sprintf( '[All Sites Cron] Exception in synchronous mode: %s', $e->getMessage() ) );
+		$result = [
+			'success' => false,
+			'message' => 'Internal error: ' . $e->getMessage(),
+			'count'   => 0,
+		];
+	} finally {
+		// Always release the lock.
+		delete_site_transient( $lock_key );
 	}
 
 	if ( $ga_mode ) {
@@ -172,7 +263,7 @@ function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response
 		'success'   => (bool) ( $result[ 'success' ] ?? false ),
 		'count'     => (int) ( $result[ 'count' ] ?? 0 ),
 		'message'   => (string) ( $result[ 'message' ] ?? '' ),
-		'timestamp' => function_exists( 'current_time' ) ? current_time( 'mysql', true ) : gmdate( 'Y-m-d H:i:s' ),
+		'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
 		'endpoint'  => 'rest',
 	];
 	return new \WP_REST_Response( $payload, 200 );
@@ -274,6 +365,65 @@ function create_error_response( $error_message ): array {
 		'success' => false,
 		'message' => $error_message,
 	];
+}
+
+/**
+ * Close connection to client and continue processing in background.
+ * Supports multiple webserver configurations.
+ *
+ * @param \WP_REST_Response $response The response to send before closing connection.
+ * @return void
+ */
+function all_sites_cron_close_connection_and_continue( \WP_REST_Response $response ): void {
+	// Try FastCGI method (Nginx + PHP-FPM, Apache + mod_fcgid, etc.).
+	if ( function_exists( 'fastcgi_finish_request' ) ) {
+		// Send the response.
+		status_header( $response->get_status() );
+		foreach ( $response->get_headers() as $header => $value ) {
+			header( sprintf( '%s: %s', $header, $value ) );
+		}
+		echo wp_json_encode( $response->get_data() );
+
+		// Close the connection and flush buffers.
+		fastcgi_finish_request();
+		return;
+	}
+
+	// Fallback for Apache mod_php and other configurations.
+	// This attempts to close the connection early, but may not work on all setups.
+	if ( ! headers_sent() ) {
+		// Disable output buffering and compression.
+		while ( ob_get_level() > 0 ) {
+			ob_end_clean();
+		}
+
+		// Start output buffering to capture response.
+		ob_start();
+
+		// Send response.
+		status_header( $response->get_status() );
+		foreach ( $response->get_headers() as $header => $value ) {
+			header( sprintf( '%s: %s', $header, $value ) );
+		}
+		header( 'Connection: close' );
+		header( 'Content-Encoding: none' );
+
+		echo wp_json_encode( $response->get_data() );
+
+		$size = ob_get_length();
+		header( 'Content-Length: ' . $size );
+
+		// Flush output buffers.
+		ob_end_flush();
+		if ( function_exists( 'flush' ) ) {
+			flush();
+		}
+	}
+
+	// Set timeout to allow long-running process.
+	if ( function_exists( 'set_time_limit' ) ) {
+		@set_time_limit( 300 ); // 5 minutes max.
+	}
 }
 
 /**

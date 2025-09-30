@@ -41,10 +41,29 @@ GitHub Actions plain text (add `?ga=1`):
 https://example.com/wp-json/all-sites-cron/v1/run?ga=1
 ```
 
+[Deferred mode](DEFERRED-MODE.md) (add `?defer=1` - responds immediately, processes in background):
+
+```
+https://example.com/wp-json/all-sites-cron/v1/run?defer=1
+```
+
+Combine parameters (GitHub Actions + Deferred):
+
+```
+https://example.com/wp-json/all-sites-cron/v1/run?ga=1&defer=1
+```
+
 Adding `?ga=1` outputs results in GitHub Actions compatible format:
 
 - Success: `::notice::Running wp-cron on X sites`
 - Error: `::error::Error message`
+
+<details>
+
+  <summary>Example GitHub Action success notice</summary>
+
+  <img src="assets/ga-output.png" alt="GitHub Action - Success notice" style="with: 60%">
+</details>
 
 ## ⏰ Trigger Options
 
@@ -58,6 +77,8 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 
 3. GitHub Actions (every 5 minutes. 5 minutes is the [shortest interval in GitHub Actions](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule)):
 
+2. GitHub Actions (every 5 minutes):
+
 ```yaml
 name: All Sites Cron Job
 on:
@@ -65,7 +86,7 @@ on:
     - cron: '*/5 * * * *'
 
 env:
-  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1'
+  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1&defer=1'
 
 jobs:
   trigger_cron:
@@ -82,6 +103,8 @@ jobs:
             --show-error \
             --fail
 ```
+
+**Note:** Using `defer=1` is recommended for GitHub Actions to prevent timeout errors on large networks.
 
 ## Customization
 
