@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.8
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,45 +15,31 @@ All Sites Cron (formerly DSS Cron) runs wp-cron across every public site in a mu
 
 > Why not just a shell loop + WP-CLI? Race conditions and overlapping cron executions across many sites become noisy and slow. This plugin centralizes dispatch safely and quickly.
 
-
-== Installation ==
-
-1. Download [`all-sites-cron.zip`](https://github.com/soderlind/all-sites-cron/releases/latest/download/all-sites-cron.zip)
-2. Upload via Network > Plugins > Add New > Upload Plugin
-3. Network Activate the plugin.
-4. Disable WordPress default cron in `wp-config.php`:
-   ```php
-   define( 'DISABLE_WP_CRON', true );
-   ```
-
-Plugin updates are handled automatically via GitHub. No need to manually download and install updates.
-
 = Configuration =
 
 The plugin exposes a REST API endpoint that triggers cron jobs across your network.
 
-Usage (JSON): `https://example.com/wp-json/all-sites-cron/v1/run`
+Usage (JSON):
+`https://example.com/wp-json/all-sites-cron/v1/run`
 
-GitHub Actions format: `https://example.com/wp-json/all-sites-cron/v1/run?ga=1`
+GitHub Actions format:
+`https://example.com/wp-json/all-sites-cron/v1/run?ga=1`
 
 Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 - Success: `::notice::Running wp-cron on X sites`
 - Error: `::error::Error message`
 
-
-
 = Trigger Options =
 
-1. System Crontab (every 5 minutes):
+1. Use a service like cron-job.org, pingdom.com, or easycron.com to call the endpoint every 5 minutes.
 
-`
-*/5 * * * * curl -s https://example.com/wp-json/all-sites-cron/v1/run
-`
+2. System Crontab (every 5 minutes):
 
-2. GitHub Actions (every 5 minutes):
+`*/5 * * * * curl -s https://example.com/wp-json/all-sites-cron/v1/run`
 
-`
-name: All Sites Cron Job
+3. GitHub Actions (every 5 minutes):
+
+`name: All Sites Cron Job
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -77,39 +63,51 @@ jobs:
             --fail
 `
 
-== Customization ==
+= Customization =
 
-Adjust maximum sites processed per request (default: 200):
+Adjust maximum sites processed per request (default: 1000):
 
-```
-add_filter( 'all_sites_cron_number_of_sites', function( $sites_per_request ) {
-  return 200; // or a lower number if you have very large networks
-});
-```
+`add_filter( 'all_sites_cron_number_of_sites', function( $max_sites ) {
+    return 500; // adjust as needed for your network size
+});`
 
-Adjust sites cache (transient) duration (default: 1 hour):
+Control batch size for processing sites (default: 50):
 
-```
-add_filter( 'all_sites_cron_sites_transient', function( $duration ) {
-  return 30 * MINUTE_IN_SECONDS; // cache list for 30 minutes
-});
-```
+`add_filter( 'all_sites_cron_batch_size', function( $batch_size ) {
+    return 25; // smaller batches use less memory
+});`
 
 Rate limit (cooldown) between runs (default: 60 seconds):
 
-```
-add_filter( 'all_sites_cron_rate_limit_seconds', function() { return 120; });
-```
+`add_filter( 'all_sites_cron_rate_limit_seconds', function( $seconds ) {
+    return 120; // 2 minutes
+});`
 
 Request timeout per spawned site cron (default: 0.01):
 
-```
-add_filter( 'all_sites_cron_request_timeout', function() { return 0.05; });
-```
+`add_filter( 'all_sites_cron_request_timeout', function( $timeout ) {
+    return 0.05; // 50 milliseconds
+});`
 
 Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 
+
+== Installation ==
+
+1. Download all-sites-cron.zip from https://github.com/soderlind/all-sites-cron/releases/latest/download/all-sites-cron.zip
+2. Upload via Network > Plugins > Add New > Upload Plugin
+3. Network Activate the plugin.
+4. Disable WordPress default cron in `wp-config.php`:
+
+`define( 'DISABLE_WP_CRON', true );`
+
+Plugin updates are handled automatically via GitHub. No need to manually download and install updates.
+
+
 == Changelog ==
+
+= 1.3.2 =
+* Documentation updates and readme.txt formatting fixes
 
 = 1.3.1 =
 * Fix SQL preparation security issue
@@ -117,10 +115,13 @@ Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 * Implement request locking to prevent concurrent executions
 * Add comprehensive error logging
 * Implement batch processing for large networks (default: 50 sites per batch)
+* Add new `all_sites_cron_batch_size` filter
 * Add return type hints for better code quality
 * Properly register activation and deactivation hooks
-* Add uninstall.php for complete cleanup on plugin deletion
+* Add `uninstall.php` for complete cleanup on plugin deletion
 * Update filter documentation in README
+* Remove `all_sites_cron_sites_transient` filter (no longer needed with batch processing)
+* Change default max sites from 200 to 1000
 
 = 1.3.0 =
 * Rename plugin to All Sites Cron (formerly DSS Cron)
@@ -160,7 +161,7 @@ Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 = 1.0.6 =
 * Make plugin faster by using `$site->__get( 'siteurl' )` instead of `get_site_url( $site->blog_id )`. This prevents use of `switch_to_blog()` and `restore_current_blog()` functions. They are expensive and slow down the plugin.
 * For `wp_remote_get`, set `blocking` to `false`. This will allow the request to be non-blocking and not wait for the response.
-* For `wp_remote_get, set sslverify to false. This will allow the request to be non-blocking and not wait for the response.
+* For `wp_remote_get`, set `sslverify` to `false`. This will allow the request to be non-blocking and not wait for the response.
 
 = 1.0.5 =
 * Update composer.json with metadata
@@ -170,10 +171,8 @@ Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 * Tested up to WordPress 6.7
 * Updated plugin description with license information.
 
-
 = 1.0.3 =
 * Fixed version compatibility
-
 
 = 1.0.2 =
 * Updated plugin description and tested up to version.
@@ -181,13 +180,11 @@ Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 = 1.0.1 =
 * Initial release.
 
-
-
 == Frequently Asked Questions ==
 
 = How does the plugin work? =
 
-It registers a REST route (`/wp-json/all-sites-cron/v1/run`) that, when requested, dispatches non‑blocking cron spawn requests (`wp-cron.php`) to each public site. It uses a very short timeout and fire‑and‑forget semantics similar to core so the central request returns quickly.
+It registers a REST route (`/wp-json/all-sites-cron/v1/run`) that, when requested, dispatches non-blocking cron spawn requests (`wp-cron.php`) to each public site. It uses a very short timeout and fire-and-forget semantics similar to core so the central request returns quickly.
 
 = Why rate limiting? =
 
@@ -202,9 +199,6 @@ Yes, `dss-cron/v1` remains temporarily as an alias. Migrate to `all-sites-cron/v
 Yes, legacy `dss_cron_*` filters proxy to the new ones for backward compatibility.
 
 == Screenshots ==
-
-1. No screenshots available.
-
 
 == License ==
 

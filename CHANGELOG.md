@@ -1,5 +1,11 @@
 ## ⚙️ Changelog
 
+### 1.3.2 - 2025-09-30
+
+- **Documentation**: Fixed readme.txt formatting to comply with WordPress.org standards.
+- **Documentation**: Added proper backticks to all code examples and inline code references.
+- **Documentation**: Comprehensive filter documentation with practical examples in README.md.
+
 ### 1.3.1 - 2025-09-30
 
 - **Security**: Fixed SQL preparation to use proper parameterized queries.
