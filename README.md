@@ -48,7 +48,7 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 
   Example GitHub Action success notice:
 
-  <img src="assets/ga-output.png" alt="GitHub Action - Success notice" style="with: 60%">
+  <!-- <img src="assets/ga-output.png" alt="GitHub Action - Success notice" style="with: 60%"> -->
 
 ## ⏰ Trigger Options
 
