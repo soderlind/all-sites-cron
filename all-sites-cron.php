@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version: 1.4.0
+ * Version:           1.4.1
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -19,7 +19,7 @@
  * Text Domain: all-sites-cron
  */
 
-namespace Soderlind\Multisite\Cron;
+namespace Soderlind\Multisite\AllSitesCron;
 
 if ( ! function_exists( 'add_action' ) ) {
 	return; // Abort if WordPress isn't bootstrapped.
@@ -43,61 +43,54 @@ $all_sites_cron_updater = \Soderlind\WordPress\GitHub_Plugin_Updater::create_wit
 );
 
 // Register REST route.
-add_action( 'rest_api_init', __NAMESPACE__ . '\\all_sites_cron_register_rest' );
+add_action( 'rest_api_init', __NAMESPACE__ . '\\register_rest_routes' );
 
 // Run one-time upgrade migration for cleaning legacy transients.
-add_action( 'plugins_loaded', __NAMESPACE__ . '\\all_sites_cron_maybe_migrate_legacy_transients', 5 );
+add_action( 'plugins_loaded', __NAMESPACE__ . '\\maybe_migrate_legacy_transients', 5 );
 
 // Register activation and deactivation hooks.
-register_activation_hook( ALL_SITES_CRON_FILE, __NAMESPACE__ . '\\all_sites_cron_activation' );
-register_deactivation_hook( ALL_SITES_CRON_FILE, __NAMESPACE__ . '\\all_sites_cron_deactivation' );
+register_activation_hook( ALL_SITES_CRON_FILE, __NAMESPACE__ . '\\activation' );
+register_deactivation_hook( ALL_SITES_CRON_FILE, __NAMESPACE__ . '\\deactivation' );
+
+/**
+ * Get REST API route arguments.
+ *
+ * @return array
+ */
+function get_rest_args(): array {
+	return [
+		'ga'    => [
+			'description'       => 'GitHub Actions plain text output mode',
+			'type'              => 'boolean',
+			'required'          => false,
+			'sanitize_callback' => 'rest_sanitize_boolean',
+			'default'           => false,
+		],
+		'defer' => [
+			'description'       => 'Deferred mode: respond immediately, process in background',
+			'type'              => 'boolean',
+			'required'          => false,
+			'sanitize_callback' => 'rest_sanitize_boolean',
+			'default'           => false,
+		],
+	];
+}
 
 /**
  * Register REST API route: /wp-json/all-sites-cron/v1/run
  */
-function all_sites_cron_register_rest(): void {
-	register_rest_route( 'all-sites-cron/v1', '/run', [
+function register_rest_routes(): void {
+	$route_config = [
 		'methods'             => 'GET',
-		'callback'            => __NAMESPACE__ . '\\all_sites_cron_rest_run',
-		'permission_callback' => '__return_true', // Public like original endpoint.
-		'args'                => [
-			'ga'    => [
-				'description'       => 'GitHub Actions plain text output mode',
-				'type'              => 'boolean',
-				'required'          => false,
-				'sanitize_callback' => 'rest_sanitize_boolean',
-				'default'           => false,
-			],
-			'defer' => [
-				'description'       => 'Deferred mode: respond immediately, process in background',
-				'type'              => 'boolean',
-				'required'          => false,
-				'sanitize_callback' => 'rest_sanitize_boolean',
-				'default'           => false,
-			],
-		],
-	] );
+		'callback'            => __NAMESPACE__ . '\\rest_run',
+		'permission_callback' => '__return_true',
+		'args'                => get_rest_args(),
+	];
+
+	register_rest_route( 'all-sites-cron/v1', '/run', $route_config );
 
 	// Backward compatibility: old namespace dss-cron still works (deprecated).
-	register_rest_route( 'dss-cron/v1', '/run', [
-		'methods'             => 'GET',
-		'callback'            => __NAMESPACE__ . '\\all_sites_cron_rest_run',
-		'permission_callback' => '__return_true',
-		'args'                => [
-			'ga'    => [
-				'type'              => 'boolean',
-				'required'          => false,
-				'sanitize_callback' => 'rest_sanitize_boolean',
-				'default'           => false,
-			],
-			'defer' => [
-				'type'              => 'boolean',
-				'required'          => false,
-				'sanitize_callback' => 'rest_sanitize_boolean',
-				'default'           => false,
-			],
-		],
-	] );
+	register_rest_route( 'dss-cron/v1', '/run', $route_config );
 }
 
 /**
@@ -106,76 +99,39 @@ function all_sites_cron_register_rest(): void {
  * @param \WP_REST_Request $request Request instance.
  * @return \WP_REST_Response|\WP_Error
  */
-function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 	if ( ! is_multisite() ) {
 		return new \WP_Error( 'all_sites_cron_not_multisite', __( 'This plugin requires WordPress Multisite', 'all-sites-cron' ), [ 'status' => 400 ] );
 	}
 
-	// Request locking: prevent concurrent executions.
-	$lock_key     = 'all_sites_cron_lock';
-	$lock_timeout = MINUTE_IN_SECONDS * 5; // 5 minutes max execution time.
-	$now          = time();
+	$ga_mode = (bool) $request->get_param( 'ga' );
 
-	// Check if lock exists and if it's stale.
-	$existing_lock = get_site_transient( $lock_key );
+	// Try to acquire lock.
+	$lock_result = acquire_lock();
+	if ( is_wp_error( $lock_result ) ) {
+		return create_response(
+			$ga_mode,
+			$lock_result->get_error_message(),
+			409
+		);
+	}	// Check rate limiting.
+	$rate_limit_result = check_rate_limit();
+	if ( is_array( $rate_limit_result ) ) {
+		// Rate limited - release lock and return error.
+		release_lock();
 
-	if ( false !== $existing_lock ) {
-		// Lock exists, check if it's stale (older than timeout).
-		if ( ( $now - $existing_lock ) < $lock_timeout ) {
-			// Lock is fresh, another process is running.
-			$message       = __( 'Another cron process is currently running. Please try again later.', 'all-sites-cron' );
-			$ga_mode_check = (bool) $request->get_param( 'ga' );
-			if ( $ga_mode_check ) {
-				$txt      = "::warning::{$message}\n";
-				$response = new \WP_REST_Response( $txt, 409 );
-				$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
-				return $response;
-			}
-			return new \WP_Error( 'all_sites_cron_locked', $message, [ 'status' => 409 ] );
-		}
-		// Lock is stale, log it and continue (will be overwritten).
-		error_log( sprintf( '[All Sites Cron] Stale lock detected and removed (age: %d seconds)', $now - $existing_lock ) );
-	}
-
-	// Set/update the lock with current timestamp.
-	set_site_transient( $lock_key, $now, $lock_timeout );	// Rate limiting: deny if last run within cooldown window.
-	$cooldown      = (int) apply_filters( 'all_sites_cron_rate_limit_seconds', apply_filters( 'dss_cron_rate_limit_seconds', 60 ) );
-	$now_gmt       = time();
-	$last_run      = (int) get_site_transient( 'all_sites_cron_last_run_ts' );
-	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
-
-	if ( $cooldown > 0 && $seconds_since < $cooldown ) {
-		// Release lock before returning!
-		delete_site_transient( $lock_key );
-
-		$retry_after = $cooldown - $seconds_since;
-		$message     = sprintf( __( 'Rate limited. Try again in %d seconds.', 'all-sites-cron' ), $retry_after );
-		$ga_mode_tmp = (bool) $request->get_param( 'ga' );
-
-		if ( $ga_mode_tmp ) {
-			$txt      = "::error::{$message}\n";
-			$response = new \WP_REST_Response( $txt, 429 );
-			$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
-			$response->header( 'Retry-After', (string) $retry_after );
-			return $response;
-		}
-
-		$payload  = [
-			'success'      => false,
-			'error'        => 'rate_limited',
-			'message'      => $message,
-			'retry_after'  => $retry_after,
-			'cooldown'     => $cooldown,
-			'last_run_gmt' => $last_run ?: null,
-			'timestamp'    => gmdate( 'Y-m-d H:i:s', $now_gmt ),
-		];
-		$response = new \WP_REST_Response( $payload, 429 );
-		$response->header( 'Retry-After', (string) $retry_after );
+		$response = create_response(
+			$ga_mode,
+			$rate_limit_result[ 'message' ],
+			429,
+			$rate_limit_result
+		);
+		$response->header( 'Retry-After', (string) $rate_limit_result[ 'retry_after' ] );
 		return $response;
 	}
 
-	$ga_mode    = (bool) $request->get_param( 'ga' );
 	$defer_mode = (bool) $request->get_param( 'defer' );
+	$now_gmt    = time();
 
 	if ( function_exists( 'ignore_user_abort' ) ) {
 		ignore_user_abort( true );
@@ -183,80 +139,36 @@ function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response
 
 	// Deferred mode: respond immediately, process in background.
 	if ( $defer_mode ) {
-		// Send immediate response based on mode.
-		if ( $ga_mode ) {
-			$txt      = "::notice::Cron job queued for background processing\n";
-			$response = new \WP_REST_Response( $txt, 202 );
-			$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
-		} else {
-			$payload  = [
-				'success'   => true,
-				'status'    => 'queued',
-				'message'   => __( 'Cron job queued for background processing', 'all-sites-cron' ),
-				'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
-				'mode'      => 'deferred',
-			];
-			$response = new \WP_REST_Response( $payload, 202 );
-		}
+		$extra_data = $ga_mode ? [] : [
+			'success'   => true,
+			'status'    => 'queued',
+			'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
+			'mode'      => 'deferred',
+		];
+		$response   = create_response(
+			$ga_mode,
+			__( 'Cron job queued for background processing', 'all-sites-cron' ),
+			202,
+			$extra_data
+		);
 
 		// Close connection and continue processing (webserver dependent).
-		all_sites_cron_close_connection_and_continue( $response );
+		close_connection_and_continue( $response );
 
-		// Wrap in try-catch to ensure lock is always released.
-		try {
-			// Now process in background after response is sent.
-			$result = all_sites_run_cron_on_all_sites();
-
-			// Store last run timestamp.
-			set_site_transient( 'all_sites_cron_last_run_ts', $now_gmt, $cooldown > 0 ? $cooldown : 60 );
-
-			// Log errors if any.
-			if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
-				error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
-			} else {
-				error_log( sprintf( '[All Sites Cron] Deferred execution completed: %d sites processed', $result[ 'count' ] ?? 0 ) );
-			}
-		} catch (\Exception $e) {
-			error_log( sprintf( '[All Sites Cron] Exception in deferred mode: %s', $e->getMessage() ) );
-		} finally {
-			// Always release the lock, even if exception occurs.
-			delete_site_transient( $lock_key );
-		}
-
-		// Exit to prevent any further output.
+		// Process in background and cleanup.
+		execute_and_cleanup( $now_gmt );
 		exit;
 	}
 
-	// Standard synchronous mode - wrap in try-catch.
-	try {
-		$result = all_sites_run_cron_on_all_sites();
+	// Standard synchronous mode.
+	$result = execute_and_cleanup( $now_gmt );
 
-		// Store last successful (attempted) run timestamp.
-		set_site_transient( 'all_sites_cron_last_run_ts', $now_gmt, $cooldown > 0 ? $cooldown : 60 );
-
-		// Log errors if any.
-		if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
-			error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
-		}
-	} catch (\Exception $e) {
-		error_log( sprintf( '[All Sites Cron] Exception in synchronous mode: %s', $e->getMessage() ) );
-		$result = [
-			'success' => false,
-			'message' => 'Internal error: ' . $e->getMessage(),
-			'count'   => 0,
-		];
-	} finally {
-		// Always release the lock.
-		delete_site_transient( $lock_key );
-	}
-
+	// Return appropriate response based on mode.
 	if ( $ga_mode ) {
-		$txt      = empty( $result[ 'success' ] )
-			? "::error::{$result[ 'message' ]}\n"
-			: "::notice::Running wp-cron on {$result[ 'count' ]} sites\n";
-		$response = new \WP_REST_Response( $txt, 200 );
-		$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
-		return $response;
+		$message = empty( $result[ 'success' ] )
+			? $result[ 'message' ]
+			: sprintf( __( 'Running wp-cron on %d sites', 'all-sites-cron' ), $result[ 'count' ] );
+		return create_response( true, $message, 200 );
 	}
 
 	$payload = [
@@ -275,7 +187,7 @@ function all_sites_cron_rest_run( \WP_REST_Request $request ): \WP_REST_Response
  * 
  * @return array
  */
-function all_sites_run_cron_on_all_sites(): array {
+function run_cron_on_all_sites(): array {
 	if ( ! is_multisite() ) {
 		return create_error_response( __( 'This plugin requires WordPress Multisite', 'all-sites-cron' ) );
 	}
@@ -283,9 +195,9 @@ function all_sites_run_cron_on_all_sites(): array {
 	$errors        = [];
 	$total_count   = 0;
 	$doing_wp_cron = sprintf( '%.22F', microtime( true ) );
-	$timeout       = apply_filters( 'all_sites_cron_request_timeout', apply_filters( 'dss_cron_request_timeout', 0.01 ) ); // ultra-short like core spawn_cron(); legacy fallback.
+	$timeout       = get_filter( 'all_sites_cron_request_timeout', 'dss_cron_request_timeout', 0.01 );
 	$batch_size    = (int) apply_filters( 'all_sites_cron_batch_size', 50 );
-	$max_sites     = (int) apply_filters( 'all_sites_cron_number_of_sites', apply_filters( 'dss_cron_number_of_sites', 1000 ) ); // Legacy filter fallback.
+	$max_sites     = (int) get_filter( 'all_sites_cron_number_of_sites', 'dss_cron_number_of_sites', 1000 );
 	$offset        = 0;
 
 	// Process sites in batches to prevent memory issues.
@@ -355,9 +267,104 @@ function all_sites_run_cron_on_all_sites(): array {
 }
 
 /**
+ * Acquire execution lock.
+ *
+ * @return true|\WP_Error True on success, WP_Error on failure.
+ */
+function acquire_lock() {
+	$lock_key     = 'all_sites_cron_lock';
+	$lock_timeout = MINUTE_IN_SECONDS * 5;
+	$now          = time();
+
+	$existing_lock = get_site_transient( $lock_key );
+
+	if ( false !== $existing_lock ) {
+		if ( ( $now - $existing_lock ) < $lock_timeout ) {
+			return new \WP_Error(
+				'all_sites_cron_locked',
+				__( 'Another cron process is currently running. Please try again later.', 'all-sites-cron' ),
+				[ 'status' => 409 ]
+			);
+		}
+		error_log( sprintf( '[All Sites Cron] Stale lock detected and removed (age: %d seconds)', $now - $existing_lock ) );
+	}
+
+	set_site_transient( $lock_key, $now, $lock_timeout );
+	return true;
+}
+
+/**
+ * Release execution lock.
+ *
+ * @return void
+ */
+function release_lock(): void {
+	delete_site_transient( 'all_sites_cron_lock' );
+}
+
+/**
+ * Check rate limiting.
+ *
+ * @return array|true Array with rate limit info if limited, true if OK.
+ */
+function check_rate_limit() {
+	$cooldown      = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', 60 );
+	$now_gmt       = time();
+	$last_run      = (int) get_site_transient( 'all_sites_cron_last_run_ts' );
+	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
+
+	if ( $cooldown > 0 && $seconds_since < $cooldown ) {
+		$retry_after = $cooldown - $seconds_since;
+		return [
+			'success'      => false,
+			'error'        => 'rate_limited',
+			'message'      => sprintf( __( 'Rate limited. Try again in %d seconds.', 'all-sites-cron' ), $retry_after ),
+			'retry_after'  => $retry_after,
+			'cooldown'     => $cooldown,
+			'last_run_gmt' => $last_run ?: null,
+			'timestamp'    => gmdate( 'Y-m-d H:i:s', $now_gmt ),
+		];
+	}
+
+	return true;
+}
+
+/**
+ * Execute cron and cleanup (with error handling).
+ *
+ * @param int $timestamp Current timestamp.
+ * @return array Execution result.
+ */
+function execute_and_cleanup( int $timestamp ): array {
+	$cooldown = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', 60 );
+
+	try {
+		$result = run_cron_on_all_sites();
+		set_site_transient( 'all_sites_cron_last_run_ts', $timestamp, $cooldown > 0 ? $cooldown : 60 );
+
+		if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
+			error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
+		} else {
+			error_log( sprintf( '[All Sites Cron] Execution completed: %d sites processed', $result[ 'count' ] ?? 0 ) );
+		}
+
+		return $result;
+	} catch (\Exception $e) {
+		error_log( sprintf( '[All Sites Cron] Exception: %s', $e->getMessage() ) );
+		return [
+			'success' => false,
+			'message' => 'Internal error: ' . $e->getMessage(),
+			'count'   => 0,
+		];
+	} finally {
+		release_lock();
+	}
+}
+
+/**
  * Create an error response.
  *
- * @param string $error_message
+ * @param string $error_message Error message.
  * @return array
  */
 function create_error_response( $error_message ): array {
@@ -368,13 +375,52 @@ function create_error_response( $error_message ): array {
 }
 
 /**
+ * Create a REST response based on mode (GA or JSON).
+ *
+ * @param bool   $ga_mode    Whether GitHub Actions mode is enabled.
+ * @param string $message    Message to send.
+ * @param int    $status     HTTP status code.
+ * @param array  $extra_data Additional data for JSON mode.
+ * @return \WP_REST_Response
+ */
+function create_response( bool $ga_mode, string $message, int $status = 200, array $extra_data = [] ): \WP_REST_Response {
+	if ( $ga_mode ) {
+		$prefix = $status >= 400 ? '::error::' : '::notice::';
+		$txt    = "{$prefix}{$message}\n";
+		if ( $status === 409 ) {
+			$prefix = '::warning::';
+			$txt    = "{$prefix}{$message}\n";
+		}
+		$response = new \WP_REST_Response( $txt, $status );
+		$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
+		return $response;
+	}
+
+	// JSON mode.
+	$data = array_merge( [ 'message' => $message ], $extra_data );
+	return new \WP_REST_Response( $data, $status );
+}
+
+/**
+ * Get filter value with legacy fallback support.
+ *
+ * @param string $new_filter    New filter name.
+ * @param string $legacy_filter Legacy filter name.
+ * @param mixed  $default       Default value.
+ * @return mixed
+ */
+function get_filter( string $new_filter, string $legacy_filter, $default ) {
+	return apply_filters( $new_filter, apply_filters( $legacy_filter, $default ) );
+}
+
+/**
  * Close connection to client and continue processing in background.
  * Supports multiple webserver configurations.
  *
  * @param \WP_REST_Response $response The response to send before closing connection.
  * @return void
  */
-function all_sites_cron_close_connection_and_continue( \WP_REST_Response $response ): void {
+function close_connection_and_continue( \WP_REST_Response $response ): void {
 	// Try FastCGI method (Nginx + PHP-FPM, Apache + mod_fcgid, etc.).
 	if ( function_exists( 'fastcgi_finish_request' ) ) {
 		// Send the response.
@@ -429,7 +475,7 @@ function all_sites_cron_close_connection_and_continue( \WP_REST_Response $respon
 /**
  * Activation hook: Run on plugin activation.
  */
-function all_sites_cron_activation(): void {
+function activation(): void {
 	if ( ! is_multisite() ) {
 		return;
 	}
@@ -442,7 +488,7 @@ function all_sites_cron_activation(): void {
 /**
  * Deactivation hook: Run on plugin deactivation.
  */
-function all_sites_cron_deactivation(): void {
+function deactivation(): void {
 	if ( ! is_multisite() ) {
 		return;
 	}
@@ -458,7 +504,7 @@ function all_sites_cron_deactivation(): void {
  * Because WordPress stores site (network) transients in options with keys like '_site_transient_{name}',
  * we can query for those starting with the legacy prefix. We keep it lightweight and only run once.
  */
-function all_sites_cron_maybe_migrate_legacy_transients(): void {
+function maybe_migrate_legacy_transients(): void {
 	if ( ! is_multisite() ) {
 		return; // Only relevant in multisite context where plugin operates.
 	}

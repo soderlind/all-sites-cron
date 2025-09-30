@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.8
-Stable tag: 1.4.0
+Stable tag: 1.4.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -113,6 +113,14 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 1.4.1 =
+* Code refactoring: Removed redundant `all_sites_cron_` prefix from function names (namespace provides isolation)
+* Improved code maintainability by eliminating DRY violations
+* Extracted helper functions for REST route registration, response formatting, and lock management
+* Cleaner function names: `register_rest_routes()`, `rest_run()`, `create_response()`, `acquire_lock()`, etc.
+* Better code organization with centralized rate limiting, error handling, and lock cleanup
+* No functionality changes - pure code refactoring for maintainability
 
 = 1.4.0 =
 * Add deferred mode with `defer=1` parameter for immediate response and background processing

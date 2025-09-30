@@ -1,5 +1,18 @@
 ## ⚙️ Changelog
 
+### 1.4.1 - 2025-10-02
+
+- **Code Quality**: Major refactoring to eliminate DRY (Don't Repeat Yourself) violations.
+- **Maintainability**: Removed redundant `all_sites_cron_` prefix from all functions since namespace provides isolation.
+- **Refactoring**: Cleaner function names: `register_rest_routes()`, `rest_run()`, `create_response()`, `acquire_lock()`, `release_lock()`, etc.
+- **Refactoring**: Extracted helper functions for REST route registration, response formatting, lock management, and rate limiting.
+- **Refactoring**: Consolidated duplicate code into reusable functions: `get_rest_args()`, `create_response()`, `get_filter()`.
+- **Refactoring**: Added dedicated lock management functions: `acquire_lock()` and `release_lock()`.
+- **Refactoring**: Created `check_rate_limit()` function to centralize rate limiting logic.
+- **Refactoring**: Added `execute_and_cleanup()` wrapper for proper error handling and lock cleanup.
+- **Readability**: Significantly improved code clarity by leveraging namespace and removing redundant prefixes.
+- **Note**: No functionality changes - pure code refactoring for maintainability.
+
 ### 1.4.0 - 2025-10-01
 
 - **Feature**: Added [deferred mode](DEFERRED-MODE.md) (`?defer=1`) for immediate response with background processing.
