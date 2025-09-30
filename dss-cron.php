@@ -9,8 +9,8 @@
  * 
  * Plugin Name: DSS Cron
  * Plugin URI: https://github.com/soderlind/dss-cron
- * Description: Run wp-cron on all public sites in a multisite network.
- * Version: 1.1.0
+ * Description: Run wp-cron on all public sites in a multisite network via REST API.
+ * Version: 1.2.0
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -27,86 +27,93 @@ if ( ! function_exists( 'add_action' ) ) {
 	return; // Abort if WordPress isn't bootstrapped.
 }
 
-// Flush rewrite rules on plugin activation and deactivation.
-register_activation_hook( __FILE__, __NAMESPACE__ . '\dss_cron_activation' );
-register_deactivation_hook( __FILE__, __NAMESPACE__ . '\dss_cron_deactivation' );
-
-
-// Hook into a custom endpoint to run the cron job.
-add_action( 'init', __NAMESPACE__ . '\dss_cron_init' );
-add_action( 'template_redirect', __NAMESPACE__ . '\dss_cron_template_redirect' );
-// Ultra-early fast response for HEAD requests hitting /dss-cron to avoid any perceived hang.
-// Prevent canonical 301 redirect for our endpoint.
-add_filter( 'redirect_canonical', function ($redirect_url) {
-	// Bypass canonical redirect for our endpoint, even if query vars not parsed yet.
-	$raw_uri = isset( $_SERVER[ 'REQUEST_URI' ] ) ? strtok( $_SERVER[ 'REQUEST_URI' ], '?' ) : '';
-	if ( rtrim( $raw_uri, '/' ) === '/dss-cron' ) {
-		return false;
-	}
-	if ( function_exists( 'get_query_var' ) && get_query_var( 'dss_cron' ) == 1 ) { // Fallback after parse.
-		return false;
-	}
-	return $redirect_url;
-}, 10, 1 );
-
+// Register REST route instead of custom rewrite endpoint.
+add_action( 'rest_api_init', __NAMESPACE__ . '\\dss_cron_register_rest' );
 
 /**
- * Initialize the custom rewrite rule and tag for the cron endpoint.
- * 
- * @return void
+ * Register REST API route: /wp-json/dss-cron/v1/run
  */
-function dss_cron_init(): void {
-	add_rewrite_rule( '^dss-cron/?$', 'index.php?dss_cron=1', 'top' );
-	add_rewrite_tag( '%dss_cron%', '1' );
-	add_rewrite_tag( '%ga%', '1' );
+function dss_cron_register_rest(): void {
+	register_rest_route( 'dss-cron/v1', '/run', [
+		'methods'             => 'GET',
+		'callback'            => __NAMESPACE__ . '\\dss_cron_rest_run',
+		'permission_callback' => '__return_true', // Public like original endpoint.
+		'args'                => [
+			'ga' => [
+				'description' => 'GitHub Actions plain text output mode',
+				'type'        => 'boolean',
+				'required'    => false,
+			],
+		],
+	] );
 }
 
 /**
- * Check for the custom query variable and run the cron job if it is set.
- * 
- * @return void
+ * REST callback handler.
+ *
+ * @param \WP_REST_Request $request Request instance.
+ * @return \WP_REST_Response|\WP_Error
  */
-function dss_cron_template_redirect(): void {
-	if ( get_query_var( 'dss_cron' ) != 1 ) {
-		return;
+function dss_cron_rest_run( \WP_REST_Request $request ) {
+	if ( ! is_multisite() ) {
+		return new \WP_Error( 'dss_cron_not_multisite', __( 'This plugin requires WordPress Multisite', 'dss-cron' ), [ 'status' => 400 ] );
 	}
-	status_header( 200 );
-	nocache_headers();
 
-	$ga_mode = isset( $_GET[ 'ga' ] );
-	if ( $ga_mode ) {
-		header( 'Content-Type: text/plain; charset=utf-8' );
-	} else {
-		header( 'Content-Type: application/json; charset=utf-8' );
-		header( 'X-DSS-Cron: json' );
+	// Rate limiting: deny if last run within cooldown window.
+	$cooldown      = (int) apply_filters( 'dss_cron_rate_limit_seconds', 60 ); // Default 60s.
+	$now_gmt       = time();
+	$last_run      = (int) get_site_transient( 'dss_cron_last_run_ts' );
+	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
+	if ( $cooldown > 0 && $seconds_since < $cooldown ) {
+		$retry_after = $cooldown - $seconds_since;
+		$message     = sprintf( __( 'Rate limited. Try again in %d seconds.', 'dss-cron' ), $retry_after );
+		$ga_mode_tmp = (bool) $request->get_param( 'ga' );
+		if ( $ga_mode_tmp ) {
+			$txt      = "::error::{$message}\n";
+			$response = new \WP_REST_Response( $txt, 429 );
+			$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
+			$response->header( 'Retry-After', (string) $retry_after );
+			return $response;
+		}
+		$payload  = [
+			'success'      => false,
+			'error'        => 'rate_limited',
+			'message'      => $message,
+			'retry_after'  => $retry_after,
+			'cooldown'     => $cooldown,
+			'last_run_gmt' => $last_run ?: null,
+			'timestamp'    => gmdate( 'Y-m-d H:i:s', $now_gmt ),
+		];
+		$response = new \WP_REST_Response( $payload, 429 );
+		$response->header( 'Retry-After', (string) $retry_after );
+		return $response;
 	}
+
+	$ga_mode = (bool) $request->get_param( 'ga' );
 	if ( function_exists( 'ignore_user_abort' ) ) {
 		ignore_user_abort( true );
 	}
-	ob_start();
 	$result = dss_run_cron_on_all_sites();
+	// Store last successful (attempted) run timestamp regardless of success to enforce cooldown.
+	set_site_transient( 'dss_cron_last_run_ts', $now_gmt, $cooldown > 0 ? $cooldown : 60 );
+
 	if ( $ga_mode ) {
-		if ( empty( $result[ 'success' ] ) ) {
-			echo "::error::{$result[ 'message' ]}\n";
-		} else {
-			echo "::notice::Running wp-cron on {$result[ 'count' ]} sites\n";
-		}
-	} else {
-		$payload = [ 
-			'success'   => (bool) ( $result[ 'success' ] ?? false ),
-			'count'     => (int) ( $result[ 'count' ] ?? 0 ),
-			'message'   => (string) ( $result[ 'message' ] ?? '' ),
-			'timestamp' => function_exists( 'current_time' ) ? current_time( 'mysql', true ) : gmdate( 'Y-m-d H:i:s' ),
-		];
-		echo function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : json_encode( $payload );
+		$txt      = empty( $result[ 'success' ] )
+			? "::error::{$result[ 'message' ]}\n"
+			: "::notice::Running wp-cron on {$result[ 'count' ]} sites\n";
+		$response = new \WP_REST_Response( $txt, 200 );
+		$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
+		return $response;
 	}
-	$body = ob_get_clean();
-	header( 'Content-Length: ' . strlen( $body ) );
-	echo $body;
-	if ( function_exists( 'fastcgi_finish_request' ) ) {
-		@fastcgi_finish_request();
-	}
-	exit;
+
+	$payload = [
+		'success'   => (bool) ( $result[ 'success' ] ?? false ),
+		'count'     => (int) ( $result[ 'count' ] ?? 0 ),
+		'message'   => (string) ( $result[ 'message' ] ?? '' ),
+		'timestamp' => function_exists( 'current_time' ) ? current_time( 'mysql', true ) : gmdate( 'Y-m-d H:i:s' ),
+		'endpoint'  => 'rest',
+	];
+	return new \WP_REST_Response( $payload, 200 );
 }
 
 /**
@@ -121,7 +128,7 @@ function dss_run_cron_on_all_sites(): array {
 
 	$sites = get_site_transient( 'dss_cron_sites' );
 	if ( false === $sites ) {
-		$sites = get_sites( [ 
+		$sites = get_sites( [
 			'public'   => 1,
 			'archived' => 0,
 			'deleted'  => 0,
@@ -141,7 +148,7 @@ function dss_run_cron_on_all_sites(): array {
 	foreach ( (array) $sites as $site ) {
 		$url      = $site->__get( 'siteurl' );
 		$cron_url = $url . '/wp-cron.php?doing_wp_cron=' . $doing_wp_cron;
-		$response = wp_remote_post( $cron_url, [ 
+		$response = wp_remote_post( $cron_url, [
 			'timeout'    => $timeout,
 			'blocking'   => false, // fire and forget
 			'sslverify'  => apply_filters( 'https_local_ssl_verify', false ),
@@ -156,18 +163,14 @@ function dss_run_cron_on_all_sites(): array {
 		return create_error_response( implode( "\n", $errors ) );
 	}
 
-	return [ 
+	return [
 		'success' => true,
 		'message' => '',
 		'count'   => count( (array) $sites ),
 	];
 }
 
-/**
- * Early exit for HEAD /dss-cron to avoid full WP load if possible.
- * Pattern match REQUEST_URI since rewrite parsing may not yet have populated query vars.
- */
-// Early head exit removed per request; HEAD now follows the same path as GET and returns a body (possibly empty JSON/text).
+// Legacy rewrite / template_redirect code removed in 1.2.0 (migrated to REST route).
 
 
 /**
@@ -177,28 +180,13 @@ function dss_run_cron_on_all_sites(): array {
  * @return array
  */
 function create_error_response( $error_message ): array {
-	return [ 
+	return [
 		'success' => false,
 		'message' => $error_message,
 	];
 }
 
-/**
- * Flush rewrite rules on plugin activation.
- * 
- * @return void
- */
-function dss_cron_activation(): void {
-	dss_cron_init();
-	flush_rewrite_rules();
-}
-
-/**
- * Flush rewrite rules on plugin deactivation.
- * 
- * @return void
- */
-function dss_cron_deactivation(): void {
-	flush_rewrite_rules();
-}
+// Activation/deactivation no longer need rewrite flush; left intentionally empty for backward compatibility if hooks referenced.
+function dss_cron_activation(): void {}
+function dss_cron_deactivation(): void {}
 

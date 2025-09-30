@@ -3,11 +3,11 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.7
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Run wp-cron on all public sites in a multisite network.
+Run wp-cron on all public sites in a multisite network (now via REST API route).
 
 == Description ==
 
@@ -27,11 +27,13 @@ DSS Cron is a WordPress plugin designed to run wp-cron on all public sites in a 
 
 = Configuration =
 
-The plugin creates an endpoint at /dss-cron that triggers cron jobs across your network.
+The plugin exposes a REST API endpoint that triggers cron jobs across your network.
 
-Usage: `https://example.com/dss-cron`
+Usage (JSON): `https://example.com/wp-json/dss-cron/v1/run`
 
-Adding ?ga to the URL (e.g., `https://example.com/dss-cron?ga`) will output results in GitHub Actions compatible format:
+GitHub Actions format: `https://example.com/wp-json/dss-cron/v1/run?ga=1`
+
+Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 - Success: `::notice::Running wp-cron on X sites`
 - Error: `::error::Error message`
 
@@ -42,7 +44,7 @@ Adding ?ga to the URL (e.g., `https://example.com/dss-cron?ga`) will output resu
 1. System Crontab (every 5 minutes):
 
 `
-*/5 * * * * curl -s https://example.com/dss-cron
+*/5 * * * * curl -s https://example.com/wp-json/dss-cron/v1/run
 `
 
 2. GitHub Actions (every 5 minutes):
@@ -54,7 +56,7 @@ on:
     - cron: '*/5 * * * *'
 
 env:
-  CRON_ENDPOINT: 'https://example/dss-cron/?ga'
+  CRON_ENDPOINT: 'https://example.com/wp-json/dss-cron/v1/run?ga=1'
 
 jobs:
   trigger_cron:
@@ -91,6 +93,12 @@ add_filter('dss_cron_sites_transient', function($duration) {
 `
 
 == Changelog ==
+
+= 1.2.0 =
+* Switch to REST API route: `/wp-json/dss-cron/v1/run` (old /dss-cron endpoint removed)
+* Keep `?ga=1` for GitHub Actions plaintext output
+* Simplify activation (no rewrite flush)
+* Internal refactor / cleanup
 
 = 1.1.0 =
 * Add JSON response format (default) for `/dss-cron` (use `?ga` for GitHub Actions plain text output)
