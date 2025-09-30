@@ -55,7 +55,7 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 2. GitHub Actions (every 5 minutes. 5 minutes is the [shortest interval in GitHub Actions](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule)):
 
 ```yaml
-name: DSS Cron Job
+name: All Sites Cron Job
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -86,31 +86,34 @@ jobs:
 Adjust maximum sites processed per request (default: 200):
 
 ```php
-add_filter( 'dss_cron_number_of_sites', function( $sites_per_request ) {
-	return 200;
+add_filter( 'all_sites_cron_number_of_sites', function( $sites_per_request ) {
+  return 200; // adjust as needed
 });
 ```
 
 Adjust transient expiration time (default: 1 hour):
 
 ```php
-add_filter( 'dss_cron_sites_transient', function( $expiration ) {
-	return 30 * MINUTE_IN_SECONDS; // change site list cache to 30 minutes
+add_filter( 'all_sites_cron_sites_transient', function( $expiration ) {
+  return 30 * MINUTE_IN_SECONDS; // change site list cache to 30 minutes
 });
+```
 
 Rate limit (cooldown) between runs (default: 60 seconds):
 
 ```php
-add_filter( 'dss_cron_rate_limit_seconds', function() {
-    return 120; // 2 minutes
+add_filter( 'all_sites_cron_rate_limit_seconds', function() {
+  return 120; // 2 minutes
 });
 ```
 
 Request timeout per site (default: 0.01):
 
 ```php
-add_filter( 'dss_cron_request_timeout', function() { return 0.05; });
+add_filter( 'all_sites_cron_request_timeout', function() { return 0.05; });
 ```
+
+Legacy note: The older `dss_cron_*` filters still work but will be removed in a future major version; update to the `all_sites_cron_*` forms.
 
 ### Interpreting Rate Limiting
 

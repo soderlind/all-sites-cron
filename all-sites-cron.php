@@ -25,6 +25,23 @@ if ( ! function_exists( 'add_action' ) ) {
 	return; // Abort if WordPress isn't bootstrapped.
 }
 
+define( 'ALL_SITES_CRON_FILE', __FILE__ );
+define( 'ALL_SITES_CRON_PATH', plugin_dir_path( ALL_SITES_CRON_FILE ) );
+
+require_once ALL_SITES_CRON_PATH . 'vendor/autoload.php';
+// Include the generic updater class
+if ( ! class_exists( 'Soderlind\WordPress\GitHub_Plugin_Updater' ) ) {
+	require_once ALL_SITES_CRON_PATH . 'class-github-plugin-updater.php';
+}
+// Initialize the updater with configuration.
+$all_sites_cron_updater = \Soderlind\WordPress\GitHub_Plugin_Updater::create_with_assets(
+	'https://github.com/soderlind/all-sites-cron',
+	ALL_SITES_CRON_FILE,
+	'all-sites-cron',
+	'/all-sites-cron\.zip/',
+	'main'
+);
+
 // Register REST route.
 add_action( 'rest_api_init', __NAMESPACE__ . '\\all_sites_cron_register_rest' );
 

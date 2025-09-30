@@ -2,7 +2,7 @@
 Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
-Tested up to: 6.7
+Tested up to: 6.8
 Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -50,7 +50,7 @@ Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 2. GitHub Actions (every 5 minutes):
 
 `
-name: DSS Cron Job
+name: All Sites Cron Job
 on:
   schedule:
     - cron: '*/5 * * * *'
@@ -141,7 +141,7 @@ Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 * Update documentation
 
 = 1.0.7 =
-* Set the number of sites to 200. You can use the `add_filter( 'dss_cron_number_of_sites', function() { return 100; } );` to change the number of sites per request.
+* Set the number of sites to 200. (Historical note: original example used `dss_cron_number_of_sites`; current filter name is `all_sites_cron_number_of_sites`. Example: `add_filter( 'all_sites_cron_number_of_sites', fn() => 100 );`)
 
 = 1.0.6 =
 * Make plugin faster by using `$site->__get( 'siteurl' )` instead of `get_site_url( $site->blog_id )`. This prevents use of `switch_to_blog()` and `restore_current_blog()` functions. They are expensive and slow down the plugin.
