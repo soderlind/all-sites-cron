@@ -1,5 +1,20 @@
 ## ⚙️ Changelog
 
+### 1.3.1 - 2025-09-30
+
+- **Security**: Fixed SQL preparation to use proper parameterized queries.
+- **Security**: Implemented request locking mechanism to prevent concurrent executions and race conditions.
+- **Enhancement**: Added REST API parameter sanitization with `rest_sanitize_boolean`.
+- **Enhancement**: Implemented batch processing for large networks (default batch size: 50 sites).
+- **Enhancement**: Added comprehensive error logging for debugging and monitoring.
+- **Enhancement**: Added return type hints to all functions for better code quality.
+- **Enhancement**: Properly registered activation and deactivation hooks with cleanup functionality.
+- **Enhancement**: Created `uninstall.php` for complete data cleanup when plugin is deleted.
+- **Filter**: Added new `all_sites_cron_batch_size` filter to control batch processing size.
+- **Documentation**: Comprehensive filter documentation added to README with practical examples.
+- **Breaking**: Removed `all_sites_cron_sites_transient` filter (sites are no longer cached, processed in batches instead).
+- **Default**: Changed default `all_sites_cron_number_of_sites` from 200 to 1000.
+
 ### 1.3.0 - 2025-09-30
 
 - Rename plugin from `DSS Cron` (slug: `dss-cron`) to `All Sites Cron` (slug: `all-sites-cron`).

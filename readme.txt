@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.8
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -110,6 +110,17 @@ add_filter( 'all_sites_cron_request_timeout', function() { return 0.05; });
 Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 
 == Changelog ==
+
+= 1.3.1 =
+* Fix SQL preparation security issue
+* Add proper REST API parameter sanitization
+* Implement request locking to prevent concurrent executions
+* Add comprehensive error logging
+* Implement batch processing for large networks (default: 50 sites per batch)
+* Add return type hints for better code quality
+* Properly register activation and deactivation hooks
+* Add uninstall.php for complete cleanup on plugin deletion
+* Update filter documentation in README
 
 = 1.3.0 =
 * Rename plugin to All Sites Cron (formerly DSS Cron)
