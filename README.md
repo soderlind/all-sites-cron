@@ -46,10 +46,6 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 - Success: `::notice::Running wp-cron on X sites`
 - Error: `::error::Error message`
 
-  Example GitHub Action success notice:
-
-  <!-- <img src="assets/ga-output.png" alt="GitHub Action - Success notice" style="with: 60%"> -->
-
 ## ⏰ Trigger Options
 
 1. (Preferred) Use a service like cron-job.org, pingdom.com, or easycron.com to call the endpoint every 5 minutes.
