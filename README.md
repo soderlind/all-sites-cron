@@ -1,4 +1,4 @@
-# DSS Cron
+# All Sites Cron
 
 Run wp-cron on all public sites in a multisite network (REST API based)
 
@@ -6,7 +6,7 @@ Run wp-cron on all public sites in a multisite network (REST API based)
 
 ## 🚀 Quick Start
 
-1. Upload `dss-cron` to `/wp-content/plugins/`
+1. Upload `all-sites-cron` to `/wp-content/plugins/`
 2. Network activate via 'Network->Plugins'
 3. Disable WordPress default cron in `wp-config.php`:
    ```php
@@ -16,7 +16,7 @@ Run wp-cron on all public sites in a multisite network (REST API based)
 Also available via Composer:
 
 ```bash
-composer require soderlind/dss-cron
+composer require soderlind/all-sites-cron
 ```
 
 ## 🔧 Configuration
@@ -26,13 +26,13 @@ The plugin exposes a REST API route that triggers cron across your network.
 JSON usage:
 
 ```
-https://example.com/wp-json/dss-cron/v1/run
+https://example.com/wp-json/all-sites-cron/v1/run
 ```
 
 GitHub Actions plain text (add `?ga=1`):
 
 ```
-https://example.com/wp-json/dss-cron/v1/run?ga=1
+https://example.com/wp-json/all-sites-cron/v1/run?ga=1
 ```
 
 Adding `?ga=1` outputs results in GitHub Actions compatible format:
@@ -49,7 +49,7 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 1. System Crontab (every 5 minutes):
 
 ```bash
-*/5 * * * * curl -s https://example.com/wp-json/dss-cron/v1/run
+*/5 * * * * curl -s https://example.com/wp-json/all-sites-cron/v1/run
 ```
 
 2. GitHub Actions (every 5 minutes. 5 minutes is the [shortest interval in GitHub Actions](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule)):
@@ -61,7 +61,7 @@ on:
     - cron: '*/5 * * * *'
 
 env:
-  CRON_ENDPOINT: 'https://example.com/wp-json/dss-cron/v1/run?ga=1'
+  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1'
 
 jobs:
   trigger_cron:
@@ -135,7 +135,7 @@ Headers include: `Retry-After: <seconds>`.
 
 - No rewrite rules to flush: activation is simpler and avoids edge cases with 404s or delayed availability.
 - No unexpected 301 canonical/trailing‑slash redirects: direct, cache‑friendly 200 responses.
-- Versioned, discoverable endpoint (`/wp-json/dss-cron/v1/run`) integrates with the WP REST index and tooling.
+- Versioned, discoverable endpoint (`/wp-json/all-sites-cron/v1/run`) integrates with the WP REST index and tooling.
 - Consistent structured JSON by default plus optional GitHub Actions text via `?ga=1`.
 - Proper HTTP status codes (e.g. 429 for rate limiting, 400 for invalid context) instead of a blanket 200.
 - Easy extensibility: future endpoints (status, logs, defer mode, auth) can be added under the same namespace without new rewrites.
@@ -151,10 +151,16 @@ Headers include: `Retry-After: <seconds>`.
 
 ## Copyright and License
 
-DSS Cron is copyright 2024 Per Soderlind
+All Sites Cron is copyright 2024 Per Soderlind
 
-DSS Cron is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version.
+All Sites Cron is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version.
 
-DSS Cron is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+All Sites Cron is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU Lesser General Public License along with the Extension. If not, see http://www.gnu.org/licenses/.
+
+---
+
+### Migration Note
+
+The plugin was renamed from "DSS Cron" (slug: `dss-cron`) to "All Sites Cron" (slug: `all-sites-cron`). The old REST namespace `dss-cron/v1` is still registered for backward compatibility, but you should migrate your automation scripts to use `all-sites-cron/v1`. Legacy WordPress filters like `dss_cron_number_of_sites` continue to work; new code should use the `all_sites_cron_*` equivalents.

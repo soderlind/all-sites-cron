@@ -1,24 +1,24 @@
-=== DSS Cron ===
+=== All Sites Cron ===
 Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.7
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Run wp-cron on all public sites in a multisite network (now via REST API route).
+Run wp-cron on all public sites in a multisite network (REST API based). Formerly known as DSS Cron.
 
 == Description ==
 
-DSS Cron is a WordPress plugin designed to run wp-cron on all public sites in a multisite network. This ensures that scheduled tasks are executed across all sites in the network.
+All Sites Cron (formerly DSS Cron) runs wp-cron across every public site in a multisite network in a single, non‑overlapping dispatch using a lightweight REST endpoint.
 
-> "You could have done this with a simple cron job. Why use this plugin?" I have a cluster of WordPress sites. I did run a shell script calling wp cli, but the race condition was a problem. I needed a way to run wp-cron on all sites without overlapping. This plugin was created to solve that problem. 
+> Why not just a shell loop + WP-CLI? Race conditions and overlapping cron executions across many sites become noisy and slow. This plugin centralizes dispatch safely and quickly.
 
 
 == Installation ==
 
-1. Upload the `dss-cron` folder to the `/wp-content/plugins/` directory.
+1. Upload the `all-sites-cron` folder to the `/wp-content/plugins/` directory.
 2. Network activate the plugin through the 'Network->Plugins' menu in WordPress.
 3. Disable WordPress default cron in `wp-config.php`:
    ```php
@@ -29,9 +29,9 @@ DSS Cron is a WordPress plugin designed to run wp-cron on all public sites in a 
 
 The plugin exposes a REST API endpoint that triggers cron jobs across your network.
 
-Usage (JSON): `https://example.com/wp-json/dss-cron/v1/run`
+Usage (JSON): `https://example.com/wp-json/all-sites-cron/v1/run`
 
-GitHub Actions format: `https://example.com/wp-json/dss-cron/v1/run?ga=1`
+GitHub Actions format: `https://example.com/wp-json/all-sites-cron/v1/run?ga=1`
 
 Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 - Success: `::notice::Running wp-cron on X sites`
@@ -44,7 +44,7 @@ Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 1. System Crontab (every 5 minutes):
 
 `
-*/5 * * * * curl -s https://example.com/wp-json/dss-cron/v1/run
+*/5 * * * * curl -s https://example.com/wp-json/all-sites-cron/v1/run
 `
 
 2. GitHub Actions (every 5 minutes):
@@ -56,7 +56,7 @@ on:
     - cron: '*/5 * * * *'
 
 env:
-  CRON_ENDPOINT: 'https://example.com/wp-json/dss-cron/v1/run?ga=1'
+  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1'
 
 jobs:
   trigger_cron:
@@ -74,30 +74,49 @@ jobs:
             --fail
 `
 
-= Customization =
+== Customization ==
 
 Adjust maximum sites processed per request (default: 200):
 
-`
-add_filter('dss_cron_number_of_sites', function($sites_per_request) {
-	return 200;
+```
+add_filter( 'all_sites_cron_number_of_sites', function( $sites_per_request ) {
+  return 200; // or a lower number if you have very large networks
 });
-`
+```
 
-Adjust sites cache duration (default: 1 hour):
+Adjust sites cache (transient) duration (default: 1 hour):
 
-`
-add_filter('dss_cron_sites_transient', function($duration) {
-	return HOUR_IN_SECONDS * 2; // 2 hours
+```
+add_filter( 'all_sites_cron_sites_transient', function( $duration ) {
+  return 30 * MINUTE_IN_SECONDS; // cache list for 30 minutes
 });
-`
+```
+
+Rate limit (cooldown) between runs (default: 60 seconds):
+
+```
+add_filter( 'all_sites_cron_rate_limit_seconds', function() { return 120; });
+```
+
+Request timeout per spawned site cron (default: 0.01):
+
+```
+add_filter( 'all_sites_cron_request_timeout', function() { return 0.05; });
+```
+
+Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
 
 == Changelog ==
+
+= 1.3.0 =
+* Rename plugin to All Sites Cron (formerly DSS Cron)
+* New REST namespace `all-sites-cron/v1` (legacy `dss-cron/v1` kept temporarily)
+* Add one-time cleanup removing old `dss_cron_*` transients
+* Introduce new filter names `all_sites_cron_*` with backward compatibility
 
 = 1.2.0 =
 * Switch to REST API route: `/wp-json/dss-cron/v1/run` (old /dss-cron endpoint removed)
 * Keep `?ga=1` for GitHub Actions plaintext output
-* Simplify activation (no rewrite flush)
 * Internal refactor / cleanup
 
 = 1.1.0 =
@@ -154,11 +173,24 @@ add_filter('dss_cron_sites_transient', function($duration) {
 
 = How does the plugin work? =
 
-The plugin hooks into a custom endpoint to run the cron job. It adds a rewrite rule and tag for the endpoint `dss-cron`. When this endpoint is accessed, the plugin will run wp-cron on all public sites in the multisite network.
+It registers a REST route (`/wp-json/all-sites-cron/v1/run`) that, when requested, dispatches non‑blocking cron spawn requests (`wp-cron.php`) to each public site. It uses a very short timeout and fire‑and‑forget semantics similar to core so the central request returns quickly.
+
+= Why rate limiting? =
+
+To prevent excessive overlapping runs triggered by external schedulers (e.g., multiple GitHub Action retries). You can tune or disable via the filter.
+
+= Is the old namespace still available? =
+
+Yes, `dss-cron/v1` remains temporarily as an alias. Migrate to `all-sites-cron/v1` soon; the alias will be removed in a future major release.
+
+= Can I still use the old filters? =
+
+Yes, legacy `dss_cron_*` filters proxy to the new ones for backward compatibility.
 
 == Screenshots ==
 
 1. No screenshots available.
+
 
 == License ==
 
