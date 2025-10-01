@@ -1,5 +1,18 @@
 ## ⚙️ Changelog
 
+### 1.5.0 - 2025-10-02
+
+- **Feature**: Added [Redis queue support](REDIS-QUEUE.md) for deferred mode - automatic if Redis is available.
+- **Enhancement**: Jobs are queued to Redis (`all_sites_cron:jobs`) for more reliable background processing.
+- **Enhancement**: New `/process-queue` endpoint for worker processes to consume Redis jobs.
+- **Enhancement**: Automatic Redis detection - uses Redis if available, falls back to FastCGI method if not.
+- **Enhancement**: Improved reliability - jobs persisted in Redis won't be lost if server restarts.
+- **Scalability**: Supports multiple worker processes for high-volume networks.
+- **Monitoring**: Queue length and job status can be monitored via Redis.
+- **Configuration**: Filters for Redis host, port, database, and queue key name.
+- **Documentation**: Comprehensive Redis queue documentation with setup instructions and examples.
+- **Backward Compatible**: Works with existing deferred mode - Redis is optional.
+
 ### 1.4.1 - 2025-10-02
 
 - **Code Quality**: Major refactoring to eliminate DRY (Don't Repeat Yourself) violations.

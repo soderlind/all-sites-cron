@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version:           1.4.1
+ * Version:           1.5.0
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -91,6 +91,13 @@ function register_rest_routes(): void {
 
 	// Backward compatibility: old namespace dss-cron still works (deprecated).
 	register_rest_route( 'dss-cron/v1', '/run', $route_config );
+
+	// Redis queue worker endpoint.
+	register_rest_route( 'all-sites-cron/v1', '/process-queue', [
+		'methods'             => 'POST',
+		'callback'            => __NAMESPACE__ . '\\rest_process_queue',
+		'permission_callback' => '__return_true',
+	] );
 }
 
 /**
@@ -139,6 +146,37 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 
 	// Deferred mode: respond immediately, process in background.
 	if ( $defer_mode ) {
+		// Check if we should use Redis queue.
+		$use_redis = apply_filters( 'all_sites_cron_use_redis_queue', is_redis_available() );
+
+		if ( $use_redis ) {
+			// Queue to Redis.
+			$queued = queue_to_redis( $now_gmt );
+
+			if ( $queued ) {
+				// Release lock immediately since job is queued.
+				release_lock();
+
+				$extra_data = $ga_mode ? [] : [
+					'success'   => true,
+					'status'    => 'queued',
+					'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
+					'mode'      => 'redis',
+				];
+
+				return create_response(
+					$ga_mode,
+					__( 'Cron job queued to Redis for background processing', 'all-sites-cron' ),
+					202,
+					$extra_data
+				);
+			}
+
+			// Redis queue failed, fall through to FastCGI method.
+			error_log( '[All Sites Cron] Redis queue failed, falling back to FastCGI method' );
+		}
+
+		// Fallback to FastCGI/connection close method.
 		$extra_data = $ga_mode ? [] : [
 			'success'   => true,
 			'status'    => 'queued',
@@ -179,6 +217,34 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		'endpoint'  => 'rest',
 	];
 	return new \WP_REST_Response( $payload, 200 );
+}
+
+/**
+ * REST callback handler for processing Redis queue.
+ * Should be called by a worker process or cron job.
+ *
+ * @return \WP_REST_Response
+ */
+function rest_process_queue(): \WP_REST_Response {
+	if ( ! is_multisite() ) {
+		return new \WP_REST_Response( [
+			'success' => false,
+			'message' => __( 'This plugin requires WordPress Multisite', 'all-sites-cron' ),
+		], 400 );
+	}
+
+	// Check if Redis is available.
+	if ( ! is_redis_available() ) {
+		return new \WP_REST_Response( [
+			'success' => false,
+			'message' => __( 'Redis is not available', 'all-sites-cron' ),
+		], 503 );
+	}
+
+	// Process the queue.
+	$result = process_redis_queue();
+
+	return new \WP_REST_Response( $result, $result[ 'success' ] ? 200 : 500 );
 }
 
 /**
@@ -411,6 +477,150 @@ function create_response( bool $ga_mode, string $message, int $status = 200, arr
  */
 function get_filter( string $new_filter, string $legacy_filter, $default ) {
 	return apply_filters( $new_filter, apply_filters( $legacy_filter, $default ) );
+}
+
+/**
+ * Check if Redis is available and properly configured.
+ *
+ * @return bool
+ */
+function is_redis_available(): bool {
+	// Check if Redis extension is loaded.
+	if ( ! extension_loaded( 'redis' ) ) {
+		return false;
+	}
+
+	// Check if Redis object cache is available (common in WordPress setups).
+	if ( function_exists( 'wp_cache_get_redis_instance' ) ) {
+		return true;
+	}
+
+	// Try to connect to Redis directly.
+	try {
+		$redis = new \Redis();
+		$host  = apply_filters( 'all_sites_cron_redis_host', '127.0.0.1' );
+		$port  = apply_filters( 'all_sites_cron_redis_port', 6379 );
+
+		if ( $redis->connect( $host, $port, 1 ) ) {
+			$redis->close();
+			return true;
+		}
+	} catch (\Exception $e) {
+		return false;
+	}
+
+	return false;
+}
+
+/**
+ * Get Redis instance for queue operations.
+ *
+ * @return \Redis|null
+ */
+function get_redis_instance(): ?\Redis {
+	// Try to get Redis instance from WordPress object cache.
+	if ( function_exists( 'wp_cache_get_redis_instance' ) ) {
+		return wp_cache_get_redis_instance();
+	}
+
+	// Create new Redis connection.
+	try {
+		$redis = new \Redis();
+		$host  = apply_filters( 'all_sites_cron_redis_host', '127.0.0.1' );
+		$port  = apply_filters( 'all_sites_cron_redis_port', 6379 );
+		$db    = apply_filters( 'all_sites_cron_redis_db', 0 );
+
+		if ( ! $redis->connect( $host, $port, 1 ) ) {
+			return null;
+		}
+
+		if ( $db > 0 ) {
+			$redis->select( $db );
+		}
+
+		return $redis;
+	} catch (\Exception $e) {
+		error_log( sprintf( '[All Sites Cron] Redis connection failed: %s', $e->getMessage() ) );
+		return null;
+	}
+}
+
+/**
+ * Queue job to Redis.
+ *
+ * @param int $timestamp Current timestamp.
+ * @return bool True on success, false on failure.
+ */
+function queue_to_redis( int $timestamp ): bool {
+	$redis = get_redis_instance();
+	if ( ! $redis ) {
+		return false;
+	}
+
+	try {
+		$queue_key = apply_filters( 'all_sites_cron_redis_queue_key', 'all_sites_cron:jobs' );
+		$job_data  = [
+			'timestamp' => $timestamp,
+			'queued_at' => time(),
+		];
+
+		// Push job to Redis list.
+		$result = $redis->rPush( $queue_key, wp_json_encode( $job_data ) );
+
+		if ( $result ) {
+			error_log( sprintf( '[All Sites Cron] Job queued to Redis (queue length: %d)', $result ) );
+			return true;
+		}
+	} catch (\Exception $e) {
+		error_log( sprintf( '[All Sites Cron] Redis queue failed: %s', $e->getMessage() ) );
+	}
+
+	return false;
+}
+
+/**
+ * Process jobs from Redis queue.
+ * Should be called by a separate worker process or cron job.
+ *
+ * @return array Processing result.
+ */
+function process_redis_queue(): array {
+	$redis = get_redis_instance();
+	if ( ! $redis ) {
+		return [
+			'success' => false,
+			'message' => 'Redis not available',
+			'count'   => 0,
+		];
+	}
+
+	try {
+		$queue_key = apply_filters( 'all_sites_cron_redis_queue_key', 'all_sites_cron:jobs' );
+		$job_json  = $redis->lPop( $queue_key );
+
+		if ( ! $job_json ) {
+			return [
+				'success' => true,
+				'message' => 'No jobs in queue',
+				'count'   => 0,
+			];
+		}
+
+		$job_data  = json_decode( $job_json, true );
+		$timestamp = $job_data[ 'timestamp' ] ?? time();
+
+		error_log( sprintf( '[All Sites Cron] Processing job from Redis (queued %d seconds ago)', time() - ( $job_data[ 'queued_at' ] ?? time() ) ) );
+
+		// Process the job.
+		return execute_and_cleanup( $timestamp );
+	} catch (\Exception $e) {
+		error_log( sprintf( '[All Sites Cron] Redis queue processing failed: %s', $e->getMessage() ) );
+		return [
+			'success' => false,
+			'message' => 'Redis error: ' . $e->getMessage(),
+			'count'   => 0,
+		];
+	}
 }
 
 /**
