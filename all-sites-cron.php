@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version: 1.5.2
+ * Version: 1.5.3
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -27,6 +27,13 @@ if ( ! function_exists( 'add_action' ) ) {
 
 define( 'ALL_SITES_CRON_FILE', __FILE__ );
 define( 'ALL_SITES_CRON_PATH', plugin_dir_path( ALL_SITES_CRON_FILE ) );
+
+// Default configuration constants
+define( 'ALL_SITES_CRON_DEFAULT_TIMEOUT', 0.01 );
+define( 'ALL_SITES_CRON_DEFAULT_BATCH_SIZE', 50 );
+define( 'ALL_SITES_CRON_DEFAULT_MAX_SITES', 1000 );
+define( 'ALL_SITES_CRON_DEFAULT_COOLDOWN', 60 );
+define( 'ALL_SITES_CRON_LOCK_TIMEOUT', MINUTE_IN_SECONDS * 5 );
 
 require_once ALL_SITES_CRON_PATH . 'vendor/autoload.php';
 // Include the generic updater class
@@ -261,9 +268,9 @@ function run_cron_on_all_sites(): array {
 	$errors        = [];
 	$total_count   = 0;
 	$doing_wp_cron = sprintf( '%.22F', microtime( true ) );
-	$timeout       = get_filter( 'all_sites_cron_request_timeout', 'dss_cron_request_timeout', 0.01 );
-	$batch_size    = (int) apply_filters( 'all_sites_cron_batch_size', 50 );
-	$max_sites     = (int) get_filter( 'all_sites_cron_number_of_sites', 'dss_cron_number_of_sites', 1000 );
+	$timeout       = get_filter( 'all_sites_cron_request_timeout', 'dss_cron_request_timeout', ALL_SITES_CRON_DEFAULT_TIMEOUT );
+	$batch_size    = (int) apply_filters( 'all_sites_cron_batch_size', ALL_SITES_CRON_DEFAULT_BATCH_SIZE );
+	$max_sites     = (int) get_filter( 'all_sites_cron_number_of_sites', 'dss_cron_number_of_sites', ALL_SITES_CRON_DEFAULT_MAX_SITES );
 	$offset        = 0;
 
 	// Process sites in batches to prevent memory issues.
@@ -314,14 +321,15 @@ function run_cron_on_all_sites(): array {
 	if ( ! empty( $errors ) ) {
 		// Return partial success with error details.
 		return [
-			'success' => false,
-			'message' => sprintf(
+			'success'    => false,
+			'message'    => sprintf(
 				__( 'Completed with %d error(s): %s', 'all-sites-cron' ),
 				count( $errors ),
 				implode( '; ', array_slice( $errors, 0, 3 ) ) . ( count( $errors ) > 3 ? '...' : '' )
 			),
-			'count'   => $total_count,
-			'errors'  => count( $errors ),
+			'count'      => $total_count,
+			'errors'     => count( $errors ),
+			'error_code' => 'PARTIAL_FAILURE',
 		];
 	}
 
@@ -339,7 +347,7 @@ function run_cron_on_all_sites(): array {
  */
 function acquire_lock() {
 	$lock_key     = 'all_sites_cron_lock';
-	$lock_timeout = MINUTE_IN_SECONDS * 5;
+	$lock_timeout = ALL_SITES_CRON_LOCK_TIMEOUT;
 	$now          = time();
 
 	$existing_lock = get_site_transient( $lock_key );
@@ -374,7 +382,7 @@ function release_lock(): void {
  * @return array|true Array with rate limit info if limited, true if OK.
  */
 function check_rate_limit() {
-	$cooldown      = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', 60 );
+	$cooldown      = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', ALL_SITES_CRON_DEFAULT_COOLDOWN );
 	$now_gmt       = time();
 	$last_run      = (int) get_site_transient( 'all_sites_cron_last_run_ts' );
 	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
@@ -398,29 +406,48 @@ function check_rate_limit() {
 /**
  * Execute cron and cleanup (with error handling).
  *
- * @param int $timestamp Current timestamp.
- * @return array Execution result.
+ * This function runs the cron jobs on all sites in the network and handles
+ * cleanup operations including lock release and transient updates.
+ *
+ * @since 1.5.2
+ * @param int $timestamp Current GMT timestamp when the process started.
+ * @return array {
+ *     Execution result array.
+ *     @type bool   $success Whether the operation was successful.
+ *     @type string $message Success or error message.
+ *     @type int    $count   Number of sites processed.
+ *     @type int    $errors  Number of errors encountered (optional).
+ *     @type string $error_code Error code for debugging (optional).
+ * }
  */
 function execute_and_cleanup( int $timestamp ): array {
-	$cooldown = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', 60 );
+	$cooldown = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', ALL_SITES_CRON_DEFAULT_COOLDOWN );
 
 	try {
 		$result = run_cron_on_all_sites();
-		set_site_transient( 'all_sites_cron_last_run_ts', $timestamp, $cooldown > 0 ? $cooldown : 60 );
+		set_site_transient( 'all_sites_cron_last_run_ts', $timestamp, $cooldown > 0 ? $cooldown : ALL_SITES_CRON_DEFAULT_COOLDOWN );
 
 		if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
-			error_log( sprintf( '[All Sites Cron] Execution failed: %s', $result[ 'message' ] ) );
+			$error_code = $result[ 'error_code' ] ?? 'EXECUTION_FAILED';
+			error_log( sprintf( '[All Sites Cron] Execution failed (Code: %s): %s', $error_code, $result[ 'message' ] ) );
 		} else {
-			error_log( sprintf( '[All Sites Cron] Execution completed: %d sites processed', $result[ 'count' ] ?? 0 ) );
+			$count       = $result[ 'count' ] ?? 0;
+			$errors      = $result[ 'errors' ] ?? 0;
+			$log_message = $errors > 0
+				? sprintf( 'Execution completed: %d sites processed (%d errors)', $count, $errors )
+				: sprintf( 'Execution completed: %d sites processed', $count );
+			error_log( sprintf( '[All Sites Cron] %s', $log_message ) );
 		}
 
 		return $result;
 	} catch (\Exception $e) {
-		error_log( sprintf( '[All Sites Cron] Exception: %s', $e->getMessage() ) );
+		$error_code = 'EXCEPTION_' . $e->getCode();
+		error_log( sprintf( '[All Sites Cron] Exception (Code: %s): %s', $error_code, $e->getMessage() ) );
 		return [
-			'success' => false,
-			'message' => 'Internal error: ' . $e->getMessage(),
-			'count'   => 0,
+			'success'    => false,
+			'message'    => 'Internal error: ' . $e->getMessage(),
+			'count'      => 0,
+			'error_code' => $error_code,
 		];
 	} finally {
 		release_lock();
@@ -430,10 +457,15 @@ function execute_and_cleanup( int $timestamp ): array {
 /**
  * Create an error response.
  *
+ * @since 1.5.2
  * @param string $error_message Error message.
- * @return array
+ * @return array {
+ *     Error response array.
+ *     @type bool   $success Always false for error responses.
+ *     @type string $message The error message.
+ * }
  */
-function create_error_response( $error_message ): array {
+function create_error_response( string $error_message ): array {
 	return [
 		'success' => false,
 		'message' => $error_message,
@@ -470,12 +502,16 @@ function create_response( bool $ga_mode, string $message, int $status = 200, arr
 /**
  * Get filter value with legacy fallback support.
  *
+ * Applies both new and legacy filters to maintain backward compatibility.
+ * The legacy filter is applied first, then the new filter is applied to that result.
+ *
+ * @since 1.5.2
  * @param string $new_filter    New filter name.
- * @param string $legacy_filter Legacy filter name.
- * @param mixed  $default       Default value.
- * @return mixed
+ * @param string $legacy_filter Legacy filter name for backward compatibility.
+ * @param mixed  $default       Default value if no filters are applied.
+ * @return mixed The filtered value.
  */
-function get_filter( string $new_filter, string $legacy_filter, $default ) {
+function get_filter( string $new_filter, string $legacy_filter, $default ): mixed {
 	return apply_filters( $new_filter, apply_filters( $legacy_filter, $default ) );
 }
 

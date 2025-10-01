@@ -1,5 +1,14 @@
 ## ⚙️ Changelog
 
+### 1.5.3 - 2025-10-01
+- **Enhancement**: Enhanced function documentation with detailed parameter and return value specifications.
+- **Enhancement**: Added configuration constants for better maintainability (timeouts, batch sizes, cooldowns).
+- **Enhancement**: Improved error handling with structured error codes for better debugging.
+- **Enhancement**: Enhanced logging with more detailed execution status and error tracking.
+- **Enhancement**: Better type safety with improved type hints and consistent return types.
+- **Code Quality**: Comprehensive code review and documentation improvements.
+- **Maintainability**: Replaced magic numbers with named constants for configuration values.
+
 ### 1.5.2 - 2025-10-01
 - Fix links in readme.txt, to point to correct documentation files.
 

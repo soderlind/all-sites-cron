@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron,redis
 Requires at least: 6.7
 Tested up to: 6.8
-Stable tag: 1.5.2
+Stable tag: 1.5.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -61,6 +61,15 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 1.5.3 =
+* Enhanced function documentation with detailed parameter and return specifications
+* Added configuration constants for better maintainability (timeouts, batch sizes, cooldowns)
+* Improved error handling with structured error codes for debugging
+* Enhanced logging with detailed execution status and error tracking
+* Better type safety with improved type hints and consistent return types
+* Comprehensive code quality improvements and documentation enhancements
+* Replaced magic numbers with named constants for configuration values
 
 = 1.5.2 =
 * Fix links in readme.txt, to point to correct documentation files.
