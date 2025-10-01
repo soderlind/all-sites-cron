@@ -47,6 +47,8 @@ https://example.com/wp-json/all-sites-cron/v1/run?ga=1
 https://example.com/wp-json/all-sites-cron/v1/run?defer=1
 ```
 
+**🚀 Redis Queue Support**: If Redis is available, deferred mode automatically uses Redis for job queuing (more reliable and scalable). See [Redis Queue documentation](REDIS-QUEUE.md) or [Quick Start](REDIS-QUICK-START.md).
+
 Combine parameters (GitHub Actions + Deferred):
 
 ```

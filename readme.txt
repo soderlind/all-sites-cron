@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron
 Requires at least: 5.0
 Tested up to: 6.8
-Stable tag: 1.4.1
+Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -36,6 +36,8 @@ Adding `?ga=1` to the URL outputs results in GitHub Actions compatible format:
 - Error: `::error::Error message`
 
 Deferred mode (`?defer=1`) returns HTTP 202 immediately and processes in background. Ideal for large networks (100+ sites) and GitHub Actions to prevent timeout errors. Works best with Nginx + PHP-FPM, Apache + mod_fcgid, and most modern hosting.
+
+**Redis Queue Support**: If Redis is available, deferred mode automatically queues jobs to Redis for more reliable and scalable background processing. Falls back to FastCGI method if Redis is not available. No configuration needed - it just works!
 
 = Trigger Options =
 
@@ -113,6 +115,18 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 1.5.0 =
+* Add Redis queue support for deferred mode - automatic if Redis is available
+* Jobs queued to Redis (`all_sites_cron:jobs`) for reliable background processing
+* New `/process-queue` endpoint for worker processes to consume Redis jobs
+* Automatic Redis detection - uses Redis if available, falls back to FastCGI if not
+* Improved reliability - jobs persisted in Redis won't be lost if server restarts
+* Supports multiple worker processes for high-volume networks
+* Queue length and job status can be monitored via Redis
+* Configuration filters for Redis host, port, database, and queue key
+* Comprehensive Redis documentation (REDIS-QUEUE.md and REDIS-QUICK-START.md)
+* Fully backward compatible - Redis is optional, existing setups work unchanged
 
 = 1.4.1 =
 * Code refactoring: Removed redundant `all_sites_cron_` prefix from function names (namespace provides isolation)
