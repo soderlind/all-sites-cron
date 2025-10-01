@@ -62,7 +62,7 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 
 <details>
 
-  <summary>Example GitHub Action success notice</summary>
+  <summary>**Example GitHub Action success notice**</summary>
 
   <img src="assets/ga-output.png" alt="GitHub Action - Success notice" style="with: 60%">
 </details>
