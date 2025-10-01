@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version:           1.5.0
+ * Version: 1.5.1
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+

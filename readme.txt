@@ -1,9 +1,9 @@
 === All Sites Cron ===
 Contributors: PerS
-Tags: cron, multisite, wp-cron
-Requires at least: 5.0
+Tags: cron, multisite, wp-cron,redis
+Requires at least: 6.7
 Tested up to: 6.8
-Stable tag: 1.5.0
+Stable tag: 1.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -39,68 +39,14 @@ Deferred mode (`?defer=1`) returns HTTP 202 immediately and processes in backgro
 
 **Redis Queue Support**: If Redis is available, deferred mode automatically queues jobs to Redis for more reliable and scalable background processing. Falls back to FastCGI method if Redis is not available. No configuration needed - it just works!
 
-= Trigger Options =
+= Documentation =
 
-1. Use a service like cron-job.org, pingdom.com, or easycron.com to call the endpoint every 5 minutes.
-
-2. System Crontab (every 5 minutes):
-
-`*/5 * * * * curl -s https://example.com/wp-json/all-sites-cron/v1/run`
-
-3. GitHub Actions (every 5 minutes):
-
-`name: All Sites Cron Job
-on:
-  schedule:
-    - cron: '*/5 * * * *'
-
-env:
-  CRON_ENDPOINT: 'https://example.com/wp-json/all-sites-cron/v1/run?ga=1&defer=1'
-
-jobs:
-  trigger_cron:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: |
-          curl -X GET ${{ env.CRON_ENDPOINT }} \
-            --connect-timeout 10 \
-            --max-time 30 \
-            --retry 3 \
-            --retry-delay 5 \
-            --silent \
-            --show-error \
-            --fail
-`
-
-= Customization =
-
-Adjust maximum sites processed per request (default: 1000):
-
-`add_filter( 'all_sites_cron_number_of_sites', function( $max_sites ) {
-    return 500; // adjust as needed for your network size
-});`
-
-Control batch size for processing sites (default: 50):
-
-`add_filter( 'all_sites_cron_batch_size', function( $batch_size ) {
-    return 25; // smaller batches use less memory
-});`
-
-Rate limit (cooldown) between runs (default: 60 seconds):
-
-`add_filter( 'all_sites_cron_rate_limit_seconds', function( $seconds ) {
-    return 120; // 2 minutes
-});`
-
-Request timeout per spawned site cron (default: 0.01):
-
-`add_filter( 'all_sites_cron_request_timeout', function( $timeout ) {
-    return 0.05; // 50 milliseconds
-});`
-
-Legacy filters `dss_cron_*` still work; prefer the new `all_sites_cron_*` names.
-
+- [Plugin Homepage](https://github.com/soderlind/all-sites-cron)
+- [Triggering Options](https://github.com/soderlind/all-sites-cron#-trigger-options)
+- [Filters](https://github.com/soderlind/all-sites-cron#filters)
+- [Deferred Mode](https://github.com/soderlind/all-sites-cron/DEFERRED-MODE.md)
+- [Redis Quick Start](https://github.com/soderlind/all-sites-cron/REDIS-QUICK-START.md)
+- [Redis Queue](https://github.com/soderlind/all-sites-cron/REDIS-QUEUE.md)
 
 == Installation ==
 
@@ -115,6 +61,9 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 1.5.1 =
+* Add links to docs from readme.txt
 
 = 1.5.0 =
 * Add Redis queue support for deferred mode - automatic if Redis is available

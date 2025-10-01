@@ -1,6 +1,10 @@
 ## ⚙️ Changelog
 
-### 1.5.0 - 2025-10-02
+### 1.5.1 - 2025-10-01
+
+- Add links to docs from readme.txt
+
+### 1.5.0 - 2025-10-01
 
 - **Feature**: Added [Redis queue support](REDIS-QUEUE.md) for deferred mode - automatic if Redis is available.
 - **Enhancement**: Jobs are queued to Redis (`all_sites_cron:jobs`) for more reliable background processing.
