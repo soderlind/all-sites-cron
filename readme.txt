@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron,redis
 Requires at least: 6.7
 Tested up to: 6.8
-Stable tag: 1.5.1
+Stable tag: 1.5.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -44,9 +44,9 @@ Deferred mode (`?defer=1`) returns HTTP 202 immediately and processes in backgro
 - [Plugin Homepage](https://github.com/soderlind/all-sites-cron)
 - [Triggering Options](https://github.com/soderlind/all-sites-cron#-trigger-options)
 - [Filters](https://github.com/soderlind/all-sites-cron#filters)
-- [Deferred Mode](https://github.com/soderlind/all-sites-cron/DEFERRED-MODE.md)
-- [Redis Quick Start](https://github.com/soderlind/all-sites-cron/REDIS-QUICK-START.md)
-- [Redis Queue](https://github.com/soderlind/all-sites-cron/REDIS-QUEUE.md)
+- [Deferred Mode](https://github.com/soderlind/all-sites-cron/blob/main/DEFERRED-MODE.md)
+- [Redis Quick Start](https://github.com/soderlind/all-sites-cron/blob/main/REDIS-QUICK-START.md)
+- [Redis Queue](https://github.com/soderlind/all-sites-cron/blob/main/REDIS-QUEUE.md)
 
 == Installation ==
 
@@ -61,6 +61,9 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 1.5.2 =
+* Fix links in readme.txt, to point to correct documentation files.
 
 = 1.5.1 =
 * Add links to docs from readme.txt

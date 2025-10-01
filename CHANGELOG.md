@@ -1,5 +1,8 @@
 ## ⚙️ Changelog
 
+### 1.5.2 - 2025-10-01
+- Fix links in readme.txt, to point to correct documentation files.
+
 ### 1.5.1 - 2025-10-01
 
 - Add links to docs from readme.txt
