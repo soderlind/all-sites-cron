@@ -1,6 +1,6 @@
 # Redis Queue for All Sites Cron
 
-Most likely [you don't need this](#summary), use [FastCGI connection-close instead](https://github.com/soderlind/all-sites-cron/blob/main/DEFERRED-MODE.md).
+Most likely [you don't need this](https://github.com/soderlind/all-sites-cron/blob/main/REDIS-QUICK-START.md#when-should-i-use-redis), use [FastCGI connection-close instead](https://github.com/soderlind/all-sites-cron/blob/main/DEFERRED-MODE.md).
 
 ```php
 // If using ?defer=1, and don't want to use Redis
