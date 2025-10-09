@@ -1,16 +1,25 @@
 # Redis Queue for All Sites Cron
 
-Most likely [you don't need this](https://github.com/soderlind/all-sites-cron/blob/main/REDIS-QUICK-START.md#when-should-i-use-redis), use [FastCGI connection-close instead](https://github.com/soderlind/all-sites-cron/blob/main/DEFERRED-MODE.md).
-
-```php
-// If using ?defer=1, and don't want to use Redis
-add_filter( 'all_sites_cron_use_redis_queue', '__return_false' );
-```
-
-
 ## Overview
 
 When deferred mode (`?defer=1`) is enabled, All Sites Cron can automatically use Redis as a job queue if Redis is available. This provides a more robust and scalable solution compared to the FastCGI connection-close method.
+
+
+## When should I use Redis?
+
+Use Redis if you have:
+- ✅ Large networks (500+ sites)
+- ✅ High-frequency scheduling
+- ✅ Need for job persistence
+- ✅ Multiple web servers
+
+Otherwise the [FastCGI method](https://github.com/soderlind/all-sites-cron/blob/main/DEFERRED-MODE.md) works great!
+
+If using `?defer=1`, and don't want to use Redis
+```php
+add_filter( 'all_sites_cron_use_redis_queue', '__return_false' );
+```
+
 
 ## Benefits of Redis Queue
 
