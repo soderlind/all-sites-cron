@@ -77,7 +77,7 @@ Adding `?ga=1` outputs results in GitHub Actions compatible format:
 */5 * * * * curl -s https://example.com/wp-json/all-sites-cron/v1/run
 ```
 
-3. GitHub Actions (every 5 minutes. 5 minutes is the [shortest interval in GitHub Actions](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule)):
+3. GitHub Actions every 5 minutes. (5 minutes is the [shortest interval in GitHub Actions](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule)):
 
 ```yaml
 name: All Sites Cron Job
