@@ -114,18 +114,20 @@ Below is a complete list of filters provided by the plugin (including Redis + le
 
 | Filter | Type | Default | Purpose | Since |
 |--------|------|---------|---------|-------|
-| `all_sites_cron_rate_limit_seconds` | int | `60` | Cooldown between runs (rate limiting) | 1.2.0 |
-| `all_sites_cron_number_of_sites` | int | `1000` | Max sites processed in one invocation | 1.0.7 (renamed 1.3.0) |
-| `all_sites_cron_batch_size` | int | `50` | Sites processed per batch (memory control) | 1.3.0 |
-| `all_sites_cron_request_timeout` | float | `0.01` | HTTP timeout per site cron dispatch (non-blocking) | 1.0.6 (renamed 1.3.0) |
-| `all_sites_cron_use_redis_queue` | bool | `is_redis_available()` | Whether deferred mode should use Redis queuing | 1.5.0 |
-| `all_sites_cron_redis_host` | string | `127.0.0.1` | Redis host for queue operations | 1.5.0 |
-| `all_sites_cron_redis_port` | int | `6379` | Redis port | 1.5.0 |
-| `all_sites_cron_redis_db` | int | `0` | Redis database index | 1.5.0 |
-| `all_sites_cron_redis_queue_key` | string | `all_sites_cron:jobs` | Redis key (list) that stores queued jobs | 1.5.0 |
-| `https_local_ssl_verify` | bool | `false` (contextual) | Core WP: SSL verification for local HTTP | (core) |
+| [`all_sites_cron_rate_limit_seconds`](all-sites-cron.php#L377) | int | `60` | Cooldown between runs (rate limiting) | 1.2.0 |
+| [`all_sites_cron_number_of_sites`](all-sites-cron.php#L266) | int | `1000` | Max sites processed in one invocation | 1.0.7 (renamed 1.3.0) |
+| [`all_sites_cron_batch_size`](all-sites-cron.php#L265) | int | `50` | Sites processed per batch (memory control) | 1.3.0 |
+| [`all_sites_cron_request_timeout`](all-sites-cron.php#L264) | float | `0.01` | HTTP timeout per site cron dispatch (non-blocking) | 1.0.6 (renamed 1.3.0) |
+| [`all_sites_cron_use_redis_queue`](all-sites-cron.php#L150) | bool | `is_redis_available()` | Whether deferred mode should use Redis queuing | 1.5.0 |
+| [`all_sites_cron_redis_host`](all-sites-cron.php#L501) | string | `127.0.0.1` | Redis host for queue operations | 1.5.0 |
+| [`all_sites_cron_redis_port`](all-sites-cron.php#L502) | int | `6379` | Redis port | 1.5.0 |
+| [`all_sites_cron_redis_db`](all-sites-cron.php#L531) | int | `0` | Redis database index | 1.5.0 |
+| [`all_sites_cron_redis_queue_key`](all-sites-cron.php#L561) | string | `all_sites_cron:jobs` | Redis key (list) that stores queued jobs | 1.5.0 |
+| [`https_local_ssl_verify`](all-sites-cron.php#L290) | bool | `false` (contextual) | Core WP: SSL verification for local HTTP | (core) |
 
-> Legacy `dss_cron_*` filters are still applied first internally (for backward compatibility) via the `get_filter()` helper, then the newer `all_sites_cron_*` version. Migrate to the new names; legacy ones will be removed in a future major release.
+> Notes:
+> * `https_local_ssl_verify` is a **WordPress core filter**, not defined by this plugin; we simply honor it when dispatching non‑blocking HTTP requests. See core docs for broader usage.
+> * Legacy `dss_cron_*` filters are still applied first internally (for backward compatibility) via the `get_filter()` helper, then the newer `all_sites_cron_*` version. Migrate to the new names; legacy ones will be removed in a future major release.
 
 #### Examples
 
