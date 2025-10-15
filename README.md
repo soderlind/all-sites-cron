@@ -108,7 +108,7 @@ jobs:
 
 ## Customization
 
-### Filters (Comprehensive Reference)
+### Filters
 
 Below is a complete list of filters provided by the plugin (including Redis + legacy aliases) that let you tune execution, performance, and infrastructure behavior.
 
