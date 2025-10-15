@@ -108,78 +108,67 @@ jobs:
 
 ## Customization
 
-### Filters
+### Filters (Comprehensive Reference)
 
-The plugin provides several filters to customize its behavior:
+Below is a complete list of filters provided by the plugin (including Redis + legacy aliases) that let you tune execution, performance, and infrastructure behavior.
 
-#### `all_sites_cron_rate_limit_seconds`
+| Filter | Type | Default | Purpose | Since |
+|--------|------|---------|---------|-------|
+| `all_sites_cron_rate_limit_seconds` | int | `60` | Cooldown between runs (rate limiting) | 1.2.0 |
+| `all_sites_cron_number_of_sites` | int | `1000` | Max sites processed in one invocation | 1.0.7 (renamed 1.3.0) |
+| `all_sites_cron_batch_size` | int | `50` | Sites processed per batch (memory control) | 1.3.0 |
+| `all_sites_cron_request_timeout` | float | `0.01` | HTTP timeout per site cron dispatch (non-blocking) | 1.0.6 (renamed 1.3.0) |
+| `all_sites_cron_use_redis_queue` | bool | `is_redis_available()` | Whether deferred mode should use Redis queuing | 1.5.0 |
+| `all_sites_cron_redis_host` | string | `127.0.0.1` | Redis host for queue operations | 1.5.0 |
+| `all_sites_cron_redis_port` | int | `6379` | Redis port | 1.5.0 |
+| `all_sites_cron_redis_db` | int | `0` | Redis database index | 1.5.0 |
+| `all_sites_cron_redis_queue_key` | string | `all_sites_cron:jobs` | Redis key (list) that stores queued jobs | 1.5.0 |
+| `https_local_ssl_verify` | bool | `false` (contextual) | Core WP: SSL verification for local HTTP | (core) |
 
-Control the cooldown period between cron runs to prevent overlapping executions.
+> Legacy `dss_cron_*` filters are still applied first internally (for backward compatibility) via the `get_filter()` helper, then the newer `all_sites_cron_*` version. Migrate to the new names; legacy ones will be removed in a future major release.
 
-- **Type**: `int`
-- **Default**: `60` (seconds)
-- **Legacy**: `dss_cron_rate_limit_seconds` (still supported)
+#### Examples
 
+Rate limiting:
 ```php
-add_filter( 'all_sites_cron_rate_limit_seconds', function( $seconds ) {
-    return 120; // 2 minutes between runs
-});
+add_filter( 'all_sites_cron_rate_limit_seconds', fn( $seconds ) => 120 ); // 2 minutes between runs
 ```
 
-#### `all_sites_cron_number_of_sites`
-
-Set the maximum number of sites to process in total per request.
-
-- **Type**: `int`
-- **Default**: `1000`
-- **Legacy**: `dss_cron_number_of_sites` (still supported)
-
+Limit total sites:
 ```php
-add_filter( 'all_sites_cron_number_of_sites', function( $max_sites ) {
-    return 500; // Process up to 500 sites
-});
+add_filter( 'all_sites_cron_number_of_sites', fn( $max ) => 500 ); // Cap total processed sites
 ```
 
-#### `all_sites_cron_batch_size`
-
-Control how many sites are processed in each batch. Smaller batches use less memory.
-
-- **Type**: `int`
-- **Default**: `50`
-- **New in**: v1.3.0
-
+Batch size:
 ```php
-add_filter( 'all_sites_cron_batch_size', function( $batch_size ) {
-    return 25; // Process 25 sites per batch
-});
+add_filter( 'all_sites_cron_batch_size', fn( $batch ) => 25 ); // Smaller batches to reduce memory
 ```
 
-#### `all_sites_cron_request_timeout`
-
-Set the timeout for wp-cron HTTP requests to each site. Uses "fire and forget" (non-blocking) requests.
-
-- **Type**: `float`
-- **Default**: `0.01` (10 milliseconds)
-- **Legacy**: `dss_cron_request_timeout` (still supported)
-
+Request timeout:
 ```php
-add_filter( 'all_sites_cron_request_timeout', function( $timeout ) {
-    return 0.05; // 50 milliseconds
-});
+add_filter( 'all_sites_cron_request_timeout', fn( $timeout ) => 0.05 ); // 50ms per site dispatch
 ```
 
-#### `https_local_ssl_verify`
-
-WordPress core filter to control SSL verification for local requests.
-
-- **Type**: `bool`
-- **Default**: `false` (in plugin context)
-- **Core Filter**: This is a WordPress core filter
-
+Force Redis (or disable):
 ```php
-add_filter( 'https_local_ssl_verify', function( $verify ) {
-    return true; // Enable SSL verification
-});
+add_filter( 'all_sites_cron_use_redis_queue', fn( $use ) => true );
+```
+
+Redis connection:
+```php
+add_filter( 'all_sites_cron_redis_host', fn() => 'redis.internal' );
+add_filter( 'all_sites_cron_redis_port', fn() => 6380 );
+add_filter( 'all_sites_cron_redis_db', fn() => 2 );
+```
+
+Custom queue key:
+```php
+add_filter( 'all_sites_cron_redis_queue_key', fn() => 'network_cron:jobs' );
+```
+
+Enable SSL verification (core filter):
+```php
+add_filter( 'https_local_ssl_verify', '__return_true' );
 ```
 
 ### Filter Usage Examples
@@ -210,16 +199,45 @@ add_filter( 'all_sites_cron_batch_size', fn() => 5 );
 add_filter( 'all_sites_cron_request_timeout', fn() => 0.1 );
 ```
 
-### Legacy Filters
+### Legacy Filters (Deprecated)
 
-The following legacy filters from the "DSS Cron" plugin are still supported but deprecated:
+Legacy aliases still applied (old → new):
 
-- `dss_cron_rate_limit_seconds` → Use `all_sites_cron_rate_limit_seconds`
-- `dss_cron_number_of_sites` → Use `all_sites_cron_number_of_sites`
-- `dss_cron_request_timeout` → Use `all_sites_cron_request_timeout`
-- `dss_cron_sites_transient` → No longer used (removed in v1.3.0)
+| Legacy | Current | Notes |
+|--------|---------|-------|
+| `dss_cron_rate_limit_seconds` | `all_sites_cron_rate_limit_seconds` | Cooldown between runs |
+| `dss_cron_number_of_sites` | `all_sites_cron_number_of_sites` | Total sites cap |
+| `dss_cron_request_timeout` | `all_sites_cron_request_timeout` | Per-site HTTP timeout |
+| `dss_cron_sites_transient` | (removed) | Removed in 1.3.0 (batch processing made it obsolete) |
 
-**Migration**: Update your code to use the new `all_sites_cron_*` filter names. Legacy filters will be removed in a future major version.
+Migration tip:
+```php
+// Old:
+add_filter( 'dss_cron_number_of_sites', fn() => 300 );
+// New:
+add_filter( 'all_sites_cron_number_of_sites', fn() => 300 );
+```
+
+### Using the Incoming Filter Parameter
+
+All filter callbacks receive the current value as the first parameter. You can **modify relative to the incoming value** instead of hard‑coding:
+
+```php
+// Increase existing rate limit by 30 seconds (but cap at 300):
+add_filter( 'all_sites_cron_rate_limit_seconds', fn( $seconds ) => min( $seconds + 30, 300 ) );
+
+// Halve the batch size dynamically (never less than 10):
+add_filter( 'all_sites_cron_batch_size', fn( $batch ) => max( 10, (int) floor( $batch / 2 ) ) );
+
+// Scale the max sites based on environment variable:
+add_filter( 'all_sites_cron_number_of_sites', fn( $current ) => getenv( 'ASC_MAX_SITES' ) ? (int) getenv( 'ASC_MAX_SITES' ) : $current );
+
+// Add a safety floor for the request timeout (never below 0.01):
+add_filter( 'all_sites_cron_request_timeout', fn( $timeout ) => max( 0.01, $timeout ) );
+
+// Dynamically choose Redis queue key per environment (prefix existing):
+add_filter( 'all_sites_cron_redis_queue_key', fn( $key ) => 'prod_' . $key );
+```
 
 ### Interpreting Rate Limiting
 
