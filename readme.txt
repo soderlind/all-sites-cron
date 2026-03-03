@@ -2,8 +2,8 @@
 Contributors: PerS
 Tags: cron, multisite, wp-cron,redis
 Requires at least: 6.7
-Tested up to: 6.8
-Stable tag: 1.5.3
+Tested up to: 7.0
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -39,6 +39,8 @@ Deferred mode (`?defer=1`) returns HTTP 202 immediately and processes in backgro
 
 **Redis Queue Support**: If Redis is available, deferred mode automatically queues jobs to Redis for more reliable and scalable background processing. Falls back to FastCGI method if Redis is not available. No configuration needed - it just works!
 
+**Authentication (v2.0.0)**: Optionally protect endpoints with a shared-secret token. Define `ALL_SITES_CRON_AUTH_TOKEN` in `wp-config.php` and pass the token via `Authorization: Bearer <token>` header or `?token=<token>` query parameter. See [Authentication docs](https://github.com/soderlind/all-sites-cron#-authentication-optional).
+
 = Documentation =
 
 - [Plugin Homepage](https://github.com/soderlind/all-sites-cron)
@@ -61,6 +63,18 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 2.0.0 =
+* Major architecture refactoring: extracted Lock, Redis_Queue, Cron_Runner, Auth, and Response classes under src/
+* Optional shared-secret authentication for REST endpoints (Bearer header or ?token= query param)
+* Atomic locking via wp_cache_add / INSERT IGNORE (fixes TOCTOU race condition)
+* Redis job re-queue with retry tracking (max 3 attempts)
+* Fixed uninstall.php to query both sitemeta and options tables
+* Redis connection lifecycle: owned connections closed, shared connections preserved
+* Rate-limit check moved before lock acquisition
+* Added PHPUnit 10.5 test suite with Brain Monkey (34 tests, 81 assertions)
+* PSR-4 autoloading via Composer
+* Fully backward compatible with all existing filters and REST routes
 
 = 1.5.3 =
 * Enhanced function documentation with detailed parameter and return specifications
@@ -197,6 +211,10 @@ Yes, `dss-cron/v1` remains temporarily as an alias. Migrate to `all-sites-cron/v
 = Can I still use the old filters? =
 
 Yes, legacy `dss_cron_*` filters proxy to the new ones for backward compatibility.
+
+= Can I require authentication? =
+
+Yes (new in v2.0.0). Define `ALL_SITES_CRON_AUTH_TOKEN` in `wp-config.php` and pass the token via `Authorization: Bearer <token>` or `?token=<token>`. Without a token configured the endpoints remain open for backward compatibility.
 
 == Screenshots ==
 

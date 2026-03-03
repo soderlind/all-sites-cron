@@ -21,7 +21,30 @@
 	"support": {
 		"issues": "https://github.com/soderlind/all-sites-cron/issues"
 	},
+	"autoload": {
+		"psr-4": {
+			"Soderlind\\Multisite\\AllSitesCron\\": "src/"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"Soderlind\\Multisite\\AllSitesCron\\Tests\\": "tests/"
+		}
+	},
 	"require": {
+		"php": ">=8.0",
 		"yahnis-elsts/plugin-update-checker": "^5.6"
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^9.6 || ^10.5",
+		"brain/monkey": "^2.6"
+	},
+	"scripts": {
+		"test": "phpunit"
+	},
+	"config": {
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		}
 	}
 }

@@ -1,5 +1,21 @@
 ## ⚙️ Changelog
 
+### 2.0.0 - 2025-10-15
+
+**Major refactoring** — the 781-line monolith has been split into a thin orchestrator and five focused classes under `src/`.
+
+- **Architecture**: Extracted five PSR-4 classes: `Lock`, `Redis_Queue`, `Cron_Runner`, `Auth`, `Response`.
+- **Security**: Added optional shared-secret authentication for REST endpoints (Bearer header or `?token=` query param). Enable via `ALL_SITES_CRON_AUTH_TOKEN` constant or `all_sites_cron_auth_token` site option.
+- **Filter**: New `all_sites_cron_require_auth` filter to enforce authentication (default: auto-detect from token presence).
+- **Fix**: Atomic locking — uses `wp_cache_add()` for persistent object caches, `INSERT IGNORE` for database-only environments. Eliminates the TOCTOU race condition in the previous get-then-set approach.
+- **Fix**: Redis job re-queue — failed jobs are re-pushed with retry tracking (max 3 attempts) instead of being silently lost.
+- **Fix**: Multisite table — `uninstall.php` now queries both `$wpdb->sitemeta` and `$wpdb->options` for correct cleanup.
+- **Fix**: Redis connection lifecycle — owned connections are closed after use; shared (object-cache) connections are left open.
+- **Fix**: Rate-limit check now runs *before* acquiring the lock, avoiding unnecessary lock contention.
+- **Testing**: Added PHPUnit 10.5 test suite with Brain Monkey (34 tests, 81 assertions). Covers locking, rate limiting, auth, response helpers, cron runner, Redis queue, and REST endpoint registration.
+- **Composer**: PSR-4 autoloading for `Soderlind\\Multisite\\AllSitesCron\\` namespace (`src/` directory).
+- **Backward Compatible**: All existing filters, REST routes, and deprecated wrappers continue to work.
+
 ### 1.5.3 - 2025-10-01
 - **Enhancement**: Enhanced function documentation with detailed parameter and return value specifications.
 - **Enhancement**: Added configuration constants for better maintainability (timeouts, batch sizes, cooldowns).

@@ -44,7 +44,7 @@ if ( function_exists( 'fastcgi_finish_request' ) ) {
     fastcgi_finish_request();
     
     // Continue processing in background
-    all_sites_run_cron_on_all_sites();
+    ( new \Soderlind\Multisite\AllSitesCron\Cron_Runner() )->run_all_sites();
 }
 ```
 
@@ -64,7 +64,7 @@ ob_end_flush();
 flush();
 
 // Continue processing
-all_sites_run_cron_on_all_sites();
+( new \Soderlind\Multisite\AllSitesCron\Cron_Runner() )->run_all_sites();
 ```
 
 **Supported Environments:**
@@ -299,16 +299,17 @@ jobs:
 
 ## Security Considerations
 
-1. **No Additional Risk:** Deferred mode uses same permissions as synchronous mode
-2. **Rate Limiting:** Still applies (60-second default cooldown)
-3. **Request Locking:** Prevents concurrent executions
-4. **Log Monitoring:** Background execution is logged for auditing
+1. **Authentication (v2.0.0):** Optionally protect endpoints with a shared-secret token — see [Authentication](README.md#-authentication-optional)
+2. **No Additional Risk:** Deferred mode uses same permissions as synchronous mode
+3. **Rate Limiting:** Still applies (60-second default cooldown)
+4. **Request Locking:** Atomic lock prevents concurrent executions
+5. **Log Monitoring:** Background execution is logged for auditing
 
 ## Future Enhancements
 
 Potential improvements for future versions:
 
-- [ ] Queue system with database storage
+- [x] Queue system with Redis storage (added in v1.5.0, improved in v2.0.0)
 - [ ] Status endpoint to check background job progress
 - [ ] Webhook callbacks when processing completes
 - [ ] Priority queue for specific sites

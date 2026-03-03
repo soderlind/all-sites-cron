@@ -6,11 +6,11 @@
  * @author      Per Soderlind
  * @copyright   2024 Per Soderlind
  * @license     GPL-2.0+
- * 
+ *
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version: 1.5.3
+ * Version: 2.0.0
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -28,7 +28,7 @@ if ( ! function_exists( 'add_action' ) ) {
 define( 'ALL_SITES_CRON_FILE', __FILE__ );
 define( 'ALL_SITES_CRON_PATH', plugin_dir_path( ALL_SITES_CRON_FILE ) );
 
-// Default configuration constants
+// Default configuration constants.
 define( 'ALL_SITES_CRON_DEFAULT_TIMEOUT', 0.01 );
 define( 'ALL_SITES_CRON_DEFAULT_BATCH_SIZE', 50 );
 define( 'ALL_SITES_CRON_DEFAULT_MAX_SITES', 1000 );
@@ -36,10 +36,12 @@ define( 'ALL_SITES_CRON_DEFAULT_COOLDOWN', 60 );
 define( 'ALL_SITES_CRON_LOCK_TIMEOUT', MINUTE_IN_SECONDS * 5 );
 
 require_once ALL_SITES_CRON_PATH . 'vendor/autoload.php';
-// Include the generic updater class
+
+// Include the generic updater class.
 if ( ! class_exists( 'Soderlind\WordPress\GitHub_Plugin_Updater' ) ) {
 	require_once ALL_SITES_CRON_PATH . 'class-github-plugin-updater.php';
 }
+
 // Initialize the updater with configuration.
 $all_sites_cron_updater = \Soderlind\WordPress\GitHub_Plugin_Updater::create_with_assets(
 	'https://github.com/soderlind/all-sites-cron',
@@ -49,7 +51,7 @@ $all_sites_cron_updater = \Soderlind\WordPress\GitHub_Plugin_Updater::create_wit
 	'main'
 );
 
-// Register REST route.
+// Register REST routes.
 add_action( 'rest_api_init', __NAMESPACE__ . '\\register_rest_routes' );
 
 // Run one-time upgrade migration for cleaning legacy transients.
@@ -58,6 +60,10 @@ add_action( 'plugins_loaded', __NAMESPACE__ . '\\maybe_migrate_legacy_transients
 // Register activation and deactivation hooks.
 register_activation_hook( ALL_SITES_CRON_FILE, __NAMESPACE__ . '\\activation' );
 register_deactivation_hook( ALL_SITES_CRON_FILE, __NAMESPACE__ . '\\deactivation' );
+
+// ---------------------------------------------------------------------------
+// REST route registration
+// ---------------------------------------------------------------------------
 
 /**
  * Get REST API route arguments.
@@ -84,13 +90,19 @@ function get_rest_args(): array {
 }
 
 /**
- * Register REST API route: /wp-json/all-sites-cron/v1/run
+ * Register REST API routes.
+ *
+ * /wp-json/all-sites-cron/v1/run         – main trigger
+ * /wp-json/dss-cron/v1/run               – backward-compatible alias (deprecated)
+ * /wp-json/all-sites-cron/v1/process-queue – Redis queue worker
  */
 function register_rest_routes(): void {
+	$permission = [ Auth::class, 'permission_callback' ];
+
 	$route_config = [
 		'methods'             => 'GET',
 		'callback'            => __NAMESPACE__ . '\\rest_run',
-		'permission_callback' => '__return_true',
+		'permission_callback' => $permission,
 		'args'                => get_rest_args(),
 	];
 
@@ -103,38 +115,39 @@ function register_rest_routes(): void {
 	register_rest_route( 'all-sites-cron/v1', '/process-queue', [
 		'methods'             => 'POST',
 		'callback'            => __NAMESPACE__ . '\\rest_process_queue',
-		'permission_callback' => '__return_true',
+		'permission_callback' => $permission,
 	] );
 }
 
+// ---------------------------------------------------------------------------
+// REST callback: /run
+// ---------------------------------------------------------------------------
+
 /**
  * REST callback handler.
+ *
+ * Order: rate-limit check → lock acquisition → execution.
+ * Checking the rate limit first avoids acquiring (then immediately releasing)
+ * a lock when the request will be rejected anyway.
  *
  * @param \WP_REST_Request $request Request instance.
  * @return \WP_REST_Response|\WP_Error
  */
 function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 	if ( ! is_multisite() ) {
-		return new \WP_Error( 'all_sites_cron_not_multisite', __( 'This plugin requires WordPress Multisite', 'all-sites-cron' ), [ 'status' => 400 ] );
+		return new \WP_Error(
+			'all_sites_cron_not_multisite',
+			__( 'This plugin requires WordPress Multisite', 'all-sites-cron' ),
+			[ 'status' => 400 ]
+		);
 	}
 
 	$ga_mode = (bool) $request->get_param( 'ga' );
 
-	// Try to acquire lock.
-	$lock_result = acquire_lock();
-	if ( is_wp_error( $lock_result ) ) {
-		return create_response(
-			$ga_mode,
-			$lock_result->get_error_message(),
-			409
-		);
-	}	// Check rate limiting.
+	// 1. Check rate limiting BEFORE acquiring the lock.
 	$rate_limit_result = check_rate_limit();
 	if ( is_array( $rate_limit_result ) ) {
-		// Rate limited - release lock and return error.
-		release_lock();
-
-		$response = create_response(
+		$response = Response::create(
 			$ga_mode,
 			$rate_limit_result[ 'message' ],
 			429,
@@ -144,6 +157,14 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		return $response;
 	}
 
+	// 2. Acquire an atomic lock.
+	$lock        = new Lock();
+	$lock_result = $lock->acquire();
+
+	if ( is_wp_error( $lock_result ) ) {
+		return Response::create( $ga_mode, $lock_result->get_error_message(), 409 );
+	}
+
 	$defer_mode = (bool) $request->get_param( 'defer' );
 	$now_gmt    = time();
 
@@ -151,18 +172,19 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		ignore_user_abort( true );
 	}
 
+	$runner = new Cron_Runner();
+
 	// Deferred mode: respond immediately, process in background.
 	if ( $defer_mode ) {
-		// Check if we should use Redis queue.
-		$use_redis = apply_filters( 'all_sites_cron_use_redis_queue', is_redis_available() );
+		$redis_queue = new Redis_Queue();
+		$use_redis   = apply_filters( 'all_sites_cron_use_redis_queue', $redis_queue->is_available() );
 
 		if ( $use_redis ) {
-			// Queue to Redis.
-			$queued = queue_to_redis( $now_gmt );
+			$queued = $redis_queue->push( $now_gmt );
 
 			if ( $queued ) {
-				// Release lock immediately since job is queued.
-				release_lock();
+				// Release lock — the worker will re-acquire when it processes.
+				$lock->release();
 
 				$extra_data = $ga_mode ? [] : [
 					'success'   => true,
@@ -171,7 +193,7 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 					'mode'      => 'redis',
 				];
 
-				return create_response(
+				return Response::create(
 					$ga_mode,
 					__( 'Cron job queued to Redis for background processing', 'all-sites-cron' ),
 					202,
@@ -179,18 +201,19 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 				);
 			}
 
-			// Redis queue failed, fall through to FastCGI method.
+			// Redis queue failed — fall through to FastCGI method.
 			error_log( '[All Sites Cron] Redis queue failed, falling back to FastCGI method' );
 		}
 
-		// Fallback to FastCGI/connection close method.
+		// Fallback to FastCGI / connection-close method.
 		$extra_data = $ga_mode ? [] : [
 			'success'   => true,
 			'status'    => 'queued',
 			'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
 			'mode'      => 'deferred',
 		];
-		$response   = create_response(
+
+		$response = Response::create(
 			$ga_mode,
 			__( 'Cron job queued for background processing', 'all-sites-cron' ),
 			202,
@@ -198,22 +221,25 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		);
 
 		// Close connection and continue processing (webserver dependent).
-		close_connection_and_continue( $response );
+		Response::close_connection_and_continue( $response );
 
-		// Process in background and cleanup.
-		execute_and_cleanup( $now_gmt );
-		exit;
+		// Process in background and clean up (releases lock in finally).
+		$runner->execute_and_cleanup( $now_gmt, $lock );
+		exit; // Intentional: prevent WordPress from sending a second response.
 	}
 
 	// Standard synchronous mode.
-	$result = execute_and_cleanup( $now_gmt );
+	$result = $runner->execute_and_cleanup( $now_gmt, $lock );
 
-	// Return appropriate response based on mode.
 	if ( $ga_mode ) {
 		$message = empty( $result[ 'success' ] )
 			? $result[ 'message' ]
-			: sprintf( __( 'Running wp-cron on %d sites', 'all-sites-cron' ), $result[ 'count' ] );
-		return create_response( true, $message, 200 );
+			: sprintf(
+				/* translators: %d: number of sites */
+				__( 'Running wp-cron on %d sites', 'all-sites-cron' ),
+				$result[ 'count' ]
+			);
+		return Response::create( true, $message, 200 );
 	}
 
 	$payload = [
@@ -226,9 +252,15 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 	return new \WP_REST_Response( $payload, 200 );
 }
 
+// ---------------------------------------------------------------------------
+// REST callback: /process-queue
+// ---------------------------------------------------------------------------
+
 /**
- * REST callback handler for processing Redis queue.
- * Should be called by a worker process or cron job.
+ * REST callback handler for processing the Redis queue.
+ *
+ * Pops one job, acquires the lock, and runs cron. If the lock is held the
+ * job is pushed back onto the queue so it isn't lost.
  *
  * @return \WP_REST_Response
  */
@@ -240,264 +272,48 @@ function rest_process_queue(): \WP_REST_Response {
 		], 400 );
 	}
 
-	// Check if Redis is available.
-	if ( ! is_redis_available() ) {
+	$redis_queue = new Redis_Queue();
+
+	if ( ! $redis_queue->is_available() ) {
 		return new \WP_REST_Response( [
 			'success' => false,
 			'message' => __( 'Redis is not available', 'all-sites-cron' ),
 		], 503 );
 	}
 
-	// Process the queue.
-	$result = process_redis_queue();
+	$job = $redis_queue->pop();
+
+	if ( null === $job ) {
+		return new \WP_REST_Response( [
+			'success' => true,
+			'message' => 'No jobs in queue',
+			'count'   => 0,
+		], 200 );
+	}
+
+	// Acquire lock before executing. If we can't, re-queue the job.
+	$lock        = new Lock();
+	$lock_result = $lock->acquire();
+
+	if ( is_wp_error( $lock_result ) ) {
+		$redis_queue->repush( $job );
+
+		return new \WP_REST_Response( [
+			'success' => false,
+			'message' => __( 'Lock held — job re-queued for later processing.', 'all-sites-cron' ),
+			'retry'   => true,
+		], 409 );
+	}
+
+	$runner = new Cron_Runner();
+	$result = $runner->execute_and_cleanup( $job[ 'timestamp' ], $lock );
 
 	return new \WP_REST_Response( $result, $result[ 'success' ] ? 200 : 500 );
 }
 
-/**
- * Run wp-cron on all public sites in the multisite network.
- * Uses batch processing for large networks to prevent memory issues.
- * 
- * @return array
- */
-function run_cron_on_all_sites(): array {
-	if ( ! is_multisite() ) {
-		return create_error_response( __( 'This plugin requires WordPress Multisite', 'all-sites-cron' ) );
-	}
-
-	$errors        = [];
-	$total_count   = 0;
-	$doing_wp_cron = sprintf( '%.22F', microtime( true ) );
-	$timeout       = get_filter( 'all_sites_cron_request_timeout', 'dss_cron_request_timeout', ALL_SITES_CRON_DEFAULT_TIMEOUT );
-	$batch_size    = (int) apply_filters( 'all_sites_cron_batch_size', ALL_SITES_CRON_DEFAULT_BATCH_SIZE );
-	$max_sites     = (int) get_filter( 'all_sites_cron_number_of_sites', 'dss_cron_number_of_sites', ALL_SITES_CRON_DEFAULT_MAX_SITES );
-	$offset        = 0;
-
-	// Process sites in batches to prevent memory issues.
-	do {
-		$sites = get_sites( [
-			'public'   => 1,
-			'archived' => 0,
-			'deleted'  => 0,
-			'spam'     => 0,
-			'number'   => $batch_size,
-			'offset'   => $offset,
-		] );
-
-		if ( empty( $sites ) ) {
-			break;
-		}
-
-		foreach ( $sites as $site ) {
-			$url      = $site->__get( 'siteurl' );
-			$cron_url = $url . '/wp-cron.php?doing_wp_cron=' . $doing_wp_cron;
-			$response = wp_remote_post( $cron_url, [
-				'timeout'    => $timeout,
-				'blocking'   => false, // fire and forget
-				'sslverify'  => apply_filters( 'https_local_ssl_verify', false ),
-				'user-agent' => 'All Sites Cron; ' . home_url( '/' ),
-			] );
-			if ( is_wp_error( $response ) ) {
-				$error_msg = sprintf( __( 'Error for %s: %s', 'all-sites-cron' ), $url, $response->get_error_message() );
-				$errors[]  = $error_msg;
-				// Log individual site errors.
-				error_log( sprintf( '[All Sites Cron] %s', $error_msg ) );
-			}
-			$total_count++;
-		}
-
-		$offset += $batch_size;
-
-		// Stop if we've reached the maximum number of sites.
-		if ( $total_count >= $max_sites ) {
-			break;
-		}
-	} while ( count( $sites ) === $batch_size );
-
-	if ( 0 === $total_count ) {
-		return create_error_response( __( 'No public sites found in the network', 'all-sites-cron' ) );
-	}
-
-	if ( ! empty( $errors ) ) {
-		// Return partial success with error details.
-		return [
-			'success'    => false,
-			'message'    => sprintf(
-				__( 'Completed with %d error(s): %s', 'all-sites-cron' ),
-				count( $errors ),
-				implode( '; ', array_slice( $errors, 0, 3 ) ) . ( count( $errors ) > 3 ? '...' : '' )
-			),
-			'count'      => $total_count,
-			'errors'     => count( $errors ),
-			'error_code' => 'PARTIAL_FAILURE',
-		];
-	}
-
-	return [
-		'success' => true,
-		'message' => '',
-		'count'   => $total_count,
-	];
-}
-
-/**
- * Acquire execution lock.
- *
- * @return true|\WP_Error True on success, WP_Error on failure.
- */
-function acquire_lock() {
-	$lock_key     = 'all_sites_cron_lock';
-	$lock_timeout = ALL_SITES_CRON_LOCK_TIMEOUT;
-	$now          = time();
-
-	$existing_lock = get_site_transient( $lock_key );
-
-	if ( false !== $existing_lock ) {
-		if ( ( $now - $existing_lock ) < $lock_timeout ) {
-			return new \WP_Error(
-				'all_sites_cron_locked',
-				__( 'Another cron process is currently running. Please try again later.', 'all-sites-cron' ),
-				[ 'status' => 409 ]
-			);
-		}
-		error_log( sprintf( '[All Sites Cron] Stale lock detected and removed (age: %d seconds)', $now - $existing_lock ) );
-	}
-
-	set_site_transient( $lock_key, $now, $lock_timeout );
-	return true;
-}
-
-/**
- * Release execution lock.
- *
- * @return void
- */
-function release_lock(): void {
-	delete_site_transient( 'all_sites_cron_lock' );
-}
-
-/**
- * Check rate limiting.
- *
- * @return array|true Array with rate limit info if limited, true if OK.
- */
-function check_rate_limit() {
-	$cooldown      = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', ALL_SITES_CRON_DEFAULT_COOLDOWN );
-	$now_gmt       = time();
-	$last_run      = (int) get_site_transient( 'all_sites_cron_last_run_ts' );
-	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
-
-	if ( $cooldown > 0 && $seconds_since < $cooldown ) {
-		$retry_after = $cooldown - $seconds_since;
-		return [
-			'success'      => false,
-			'error'        => 'rate_limited',
-			'message'      => sprintf( __( 'Rate limited. Try again in %d seconds.', 'all-sites-cron' ), $retry_after ),
-			'retry_after'  => $retry_after,
-			'cooldown'     => $cooldown,
-			'last_run_gmt' => $last_run ?: null,
-			'timestamp'    => gmdate( 'Y-m-d H:i:s', $now_gmt ),
-		];
-	}
-
-	return true;
-}
-
-/**
- * Execute cron and cleanup (with error handling).
- *
- * This function runs the cron jobs on all sites in the network and handles
- * cleanup operations including lock release and transient updates.
- *
- * @since 1.5.2
- * @param int $timestamp Current GMT timestamp when the process started.
- * @return array {
- *     Execution result array.
- *     @type bool   $success Whether the operation was successful.
- *     @type string $message Success or error message.
- *     @type int    $count   Number of sites processed.
- *     @type int    $errors  Number of errors encountered (optional).
- *     @type string $error_code Error code for debugging (optional).
- * }
- */
-function execute_and_cleanup( int $timestamp ): array {
-	$cooldown = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', ALL_SITES_CRON_DEFAULT_COOLDOWN );
-
-	try {
-		$result = run_cron_on_all_sites();
-		set_site_transient( 'all_sites_cron_last_run_ts', $timestamp, $cooldown > 0 ? $cooldown : ALL_SITES_CRON_DEFAULT_COOLDOWN );
-
-		if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
-			$error_code = $result[ 'error_code' ] ?? 'EXECUTION_FAILED';
-			error_log( sprintf( '[All Sites Cron] Execution failed (Code: %s): %s', $error_code, $result[ 'message' ] ) );
-		} else {
-			$count       = $result[ 'count' ] ?? 0;
-			$errors      = $result[ 'errors' ] ?? 0;
-			$log_message = $errors > 0
-				? sprintf( 'Execution completed: %d sites processed (%d errors)', $count, $errors )
-				: sprintf( 'Execution completed: %d sites processed', $count );
-			error_log( sprintf( '[All Sites Cron] %s', $log_message ) );
-		}
-
-		return $result;
-	} catch (\Exception $e) {
-		$error_code = 'EXCEPTION_' . $e->getCode();
-		error_log( sprintf( '[All Sites Cron] Exception (Code: %s): %s', $error_code, $e->getMessage() ) );
-		return [
-			'success'    => false,
-			'message'    => 'Internal error: ' . $e->getMessage(),
-			'count'      => 0,
-			'error_code' => $error_code,
-		];
-	} finally {
-		release_lock();
-	}
-}
-
-/**
- * Create an error response.
- *
- * @since 1.5.2
- * @param string $error_message Error message.
- * @return array {
- *     Error response array.
- *     @type bool   $success Always false for error responses.
- *     @type string $message The error message.
- * }
- */
-function create_error_response( string $error_message ): array {
-	return [
-		'success' => false,
-		'message' => $error_message,
-	];
-}
-
-/**
- * Create a REST response based on mode (GA or JSON).
- *
- * @param bool   $ga_mode    Whether GitHub Actions mode is enabled.
- * @param string $message    Message to send.
- * @param int    $status     HTTP status code.
- * @param array  $extra_data Additional data for JSON mode.
- * @return \WP_REST_Response
- */
-function create_response( bool $ga_mode, string $message, int $status = 200, array $extra_data = [] ): \WP_REST_Response {
-	if ( $ga_mode ) {
-		$prefix = $status >= 400 ? '::error::' : '::notice::';
-		$txt    = "{$prefix}{$message}\n";
-		if ( $status === 409 ) {
-			$prefix = '::warning::';
-			$txt    = "{$prefix}{$message}\n";
-		}
-		$response = new \WP_REST_Response( $txt, $status );
-		$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
-		return $response;
-	}
-
-	// JSON mode.
-	$data = array_merge( [ 'message' => $message ], $extra_data );
-	return new \WP_REST_Response( $data, $status );
-}
+// ---------------------------------------------------------------------------
+// Shared helper (kept as namespace function for backward compat)
+// ---------------------------------------------------------------------------
 
 /**
  * Get filter value with legacy fallback support.
@@ -516,207 +332,131 @@ function get_filter( string $new_filter, string $legacy_filter, $default ): mixe
 }
 
 /**
- * Check if Redis is available and properly configured.
+ * Check rate limiting.
  *
+ * @return array|true Array with rate limit info if limited, true if OK.
+ */
+function check_rate_limit() {
+	$cooldown      = (int) get_filter( 'all_sites_cron_rate_limit_seconds', 'dss_cron_rate_limit_seconds', ALL_SITES_CRON_DEFAULT_COOLDOWN );
+	$now_gmt       = time();
+	$last_run      = (int) get_site_transient( 'all_sites_cron_last_run_ts' );
+	$seconds_since = $last_run ? ( $now_gmt - $last_run ) : $cooldown + 1;
+
+	if ( $cooldown > 0 && $seconds_since < $cooldown ) {
+		$retry_after = $cooldown - $seconds_since;
+		return [
+			'success'      => false,
+			'error'        => 'rate_limited',
+			'message'      => sprintf(
+				/* translators: %d: seconds until retry is allowed */
+				__( 'Rate limited. Try again in %d seconds.', 'all-sites-cron' ),
+				$retry_after
+			),
+			'retry_after'  => $retry_after,
+			'cooldown'     => $cooldown,
+			'last_run_gmt' => $last_run ?: null,
+			'timestamp'    => gmdate( 'Y-m-d H:i:s', $now_gmt ),
+		];
+	}
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compat wrapper functions (delegate to new classes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Acquire execution lock.
+ *
+ * @deprecated 2.0.0 Use Lock::acquire() directly.
+ * @return true|\WP_Error
+ */
+function acquire_lock() {
+	return ( new Lock() )->acquire();
+}
+
+/**
+ * Release execution lock.
+ *
+ * @deprecated 2.0.0 Use Lock::release() directly.
+ * @return void
+ */
+function release_lock(): void {
+	( new Lock() )->release();
+}
+
+/**
+ * Run wp-cron on all public sites.
+ *
+ * @deprecated 2.0.0 Use Cron_Runner::run_all_sites() directly.
+ * @return array
+ */
+function run_cron_on_all_sites(): array {
+	return ( new Cron_Runner() )->run_all_sites();
+}
+
+/**
+ * Execute cron and cleanup.
+ *
+ * @deprecated 2.0.0 Use Cron_Runner::execute_and_cleanup() directly.
+ * @param int $timestamp Current GMT timestamp.
+ * @return array
+ */
+function execute_and_cleanup( int $timestamp ): array {
+	$lock = new Lock();
+	return ( new Cron_Runner() )->execute_and_cleanup( $timestamp, $lock );
+}
+
+/**
+ * Create an error response array.
+ *
+ * @deprecated 2.0.0 Use Response::error_array() directly.
+ * @param string $error_message Error message.
+ * @return array
+ */
+function create_error_response( string $error_message ): array {
+	return Response::error_array( $error_message );
+}
+
+/**
+ * Create a REST response based on mode (GA or JSON).
+ *
+ * @deprecated 2.0.0 Use Response::create() directly.
+ * @param bool   $ga_mode    Whether GitHub Actions mode is enabled.
+ * @param string $message    Message to send.
+ * @param int    $status     HTTP status code.
+ * @param array  $extra_data Additional data for JSON mode.
+ * @return \WP_REST_Response
+ */
+function create_response( bool $ga_mode, string $message, int $status = 200, array $extra_data = [] ): \WP_REST_Response {
+	return Response::create( $ga_mode, $message, $status, $extra_data );
+}
+
+/**
+ * Check if Redis is available.
+ *
+ * @deprecated 2.0.0 Use Redis_Queue::is_available() directly.
  * @return bool
  */
 function is_redis_available(): bool {
-	// Check if Redis extension is loaded.
-	if ( ! extension_loaded( 'redis' ) ) {
-		return false;
-	}
-
-	// Check if Redis object cache is available (common in WordPress setups).
-	if ( function_exists( 'wp_cache_get_redis_instance' ) ) {
-		return true;
-	}
-
-	// Try to connect to Redis directly.
-	try {
-		$redis = new \Redis();
-		$host  = apply_filters( 'all_sites_cron_redis_host', '127.0.0.1' );
-		$port  = apply_filters( 'all_sites_cron_redis_port', 6379 );
-
-		if ( $redis->connect( $host, $port, 1 ) ) {
-			$redis->close();
-			return true;
-		}
-	} catch (\Exception $e) {
-		return false;
-	}
-
-	return false;
+	return ( new Redis_Queue() )->is_available();
 }
 
 /**
- * Get Redis instance for queue operations.
+ * Close connection and continue processing.
  *
- * @return \Redis|null
- */
-function get_redis_instance(): ?\Redis {
-	// Try to get Redis instance from WordPress object cache.
-	if ( function_exists( 'wp_cache_get_redis_instance' ) ) {
-		return wp_cache_get_redis_instance();
-	}
-
-	// Create new Redis connection.
-	try {
-		$redis = new \Redis();
-		$host  = apply_filters( 'all_sites_cron_redis_host', '127.0.0.1' );
-		$port  = apply_filters( 'all_sites_cron_redis_port', 6379 );
-		$db    = apply_filters( 'all_sites_cron_redis_db', 0 );
-
-		if ( ! $redis->connect( $host, $port, 1 ) ) {
-			return null;
-		}
-
-		if ( $db > 0 ) {
-			$redis->select( $db );
-		}
-
-		return $redis;
-	} catch (\Exception $e) {
-		error_log( sprintf( '[All Sites Cron] Redis connection failed: %s', $e->getMessage() ) );
-		return null;
-	}
-}
-
-/**
- * Queue job to Redis.
- *
- * @param int $timestamp Current timestamp.
- * @return bool True on success, false on failure.
- */
-function queue_to_redis( int $timestamp ): bool {
-	$redis = get_redis_instance();
-	if ( ! $redis ) {
-		return false;
-	}
-
-	try {
-		$queue_key = apply_filters( 'all_sites_cron_redis_queue_key', 'all_sites_cron:jobs' );
-		$job_data  = [
-			'timestamp' => $timestamp,
-			'queued_at' => time(),
-		];
-
-		// Push job to Redis list.
-		$result = $redis->rPush( $queue_key, wp_json_encode( $job_data ) );
-
-		if ( $result ) {
-			error_log( sprintf( '[All Sites Cron] Job queued to Redis (queue length: %d)', $result ) );
-			return true;
-		}
-	} catch (\Exception $e) {
-		error_log( sprintf( '[All Sites Cron] Redis queue failed: %s', $e->getMessage() ) );
-	}
-
-	return false;
-}
-
-/**
- * Process jobs from Redis queue.
- * Should be called by a separate worker process or cron job.
- *
- * @return array Processing result.
- */
-function process_redis_queue(): array {
-	$redis = get_redis_instance();
-	if ( ! $redis ) {
-		return [
-			'success' => false,
-			'message' => 'Redis not available',
-			'count'   => 0,
-		];
-	}
-
-	try {
-		$queue_key = apply_filters( 'all_sites_cron_redis_queue_key', 'all_sites_cron:jobs' );
-		$job_json  = $redis->lPop( $queue_key );
-
-		if ( ! $job_json ) {
-			return [
-				'success' => true,
-				'message' => 'No jobs in queue',
-				'count'   => 0,
-			];
-		}
-
-		$job_data  = json_decode( $job_json, true );
-		$timestamp = $job_data[ 'timestamp' ] ?? time();
-
-		error_log( sprintf( '[All Sites Cron] Processing job from Redis (queued %d seconds ago)', time() - ( $job_data[ 'queued_at' ] ?? time() ) ) );
-
-		// Process the job.
-		return execute_and_cleanup( $timestamp );
-	} catch (\Exception $e) {
-		error_log( sprintf( '[All Sites Cron] Redis queue processing failed: %s', $e->getMessage() ) );
-		return [
-			'success' => false,
-			'message' => 'Redis error: ' . $e->getMessage(),
-			'count'   => 0,
-		];
-	}
-}
-
-/**
- * Close connection to client and continue processing in background.
- * Supports multiple webserver configurations.
- *
- * @param \WP_REST_Response $response The response to send before closing connection.
+ * @deprecated 2.0.0 Use Response::close_connection_and_continue() directly.
+ * @param \WP_REST_Response $response Response to send.
  * @return void
  */
 function close_connection_and_continue( \WP_REST_Response $response ): void {
-	// Try FastCGI method (Nginx + PHP-FPM, Apache + mod_fcgid, etc.).
-	if ( function_exists( 'fastcgi_finish_request' ) ) {
-		// Send the response.
-		status_header( $response->get_status() );
-		foreach ( $response->get_headers() as $header => $value ) {
-			header( sprintf( '%s: %s', $header, $value ) );
-		}
-		echo wp_json_encode( $response->get_data() );
-
-		// Close the connection and flush buffers.
-		fastcgi_finish_request();
-		return;
-	}
-
-	// Fallback for Apache mod_php and other configurations.
-	// This attempts to close the connection early, but may not work on all setups.
-	if ( ! headers_sent() ) {
-		// Disable output buffering and compression.
-		while ( ob_get_level() > 0 ) {
-			ob_end_clean();
-		}
-
-		// Start output buffering to capture response.
-		ob_start();
-
-		// Send response.
-		status_header( $response->get_status() );
-		foreach ( $response->get_headers() as $header => $value ) {
-			header( sprintf( '%s: %s', $header, $value ) );
-		}
-		header( 'Connection: close' );
-		header( 'Content-Encoding: none' );
-
-		echo wp_json_encode( $response->get_data() );
-
-		$size = ob_get_length();
-		header( 'Content-Length: ' . $size );
-
-		// Flush output buffers.
-		ob_end_flush();
-		if ( function_exists( 'flush' ) ) {
-			flush();
-		}
-	}
-
-	// Set timeout to allow long-running process.
-	if ( function_exists( 'set_time_limit' ) ) {
-		@set_time_limit( 300 ); // 5 minutes max.
-	}
+	Response::close_connection_and_continue( $response );
 }
+
+// ---------------------------------------------------------------------------
+// Activation / deactivation / migration
+// ---------------------------------------------------------------------------
 
 /**
  * Activation hook: Run on plugin activation.
@@ -725,8 +465,8 @@ function activation(): void {
 	if ( ! is_multisite() ) {
 		return;
 	}
-	// Clear any existing locks and rate limit transients on activation.
-	delete_site_transient( 'all_sites_cron_lock' );
+	$lock = new Lock();
+	$lock->release();
 	delete_site_transient( 'all_sites_cron_last_run_ts' );
 	delete_site_transient( 'all_sites_cron_sites' );
 }
@@ -738,8 +478,8 @@ function deactivation(): void {
 	if ( ! is_multisite() ) {
 		return;
 	}
-	// Clear transients on deactivation.
-	delete_site_transient( 'all_sites_cron_lock' );
+	$lock = new Lock();
+	$lock->release();
 	delete_site_transient( 'all_sites_cron_last_run_ts' );
 	delete_site_transient( 'all_sites_cron_sites' );
 }
@@ -747,34 +487,55 @@ function deactivation(): void {
 /**
  * One-time migration: remove legacy dss_cron_* transients after rename.
  *
- * Because WordPress stores site (network) transients in options with keys like '_site_transient_{name}',
- * we can query for those starting with the legacy prefix. We keep it lightweight and only run once.
+ * On multisite, network-level site transients are stored in wp_sitemeta
+ * (not wp_options). This function queries the correct table.
  */
 function maybe_migrate_legacy_transients(): void {
 	if ( ! is_multisite() ) {
-		return; // Only relevant in multisite context where plugin operates.
+		return;
 	}
 	$done_flag = 'all_sites_cron_migrated_legacy_transients';
 	if ( get_site_option( $done_flag ) ) {
-		return; // Already migrated.
+		return;
 	}
 	global $wpdb;
 
-	// Look for both site_transient and regular transient naming just in case.
 	$site_transient_pattern = $wpdb->esc_like( '_site_transient_dss_cron_' ) . '%';
 	$transient_pattern      = $wpdb->esc_like( '_transient_dss_cron_' ) . '%';
 
-	// Use proper prepared statement with explicit placeholders.
-	$query = $wpdb->prepare(
-		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-		$site_transient_pattern,
-		$transient_pattern
+	// Network site-transients live in wp_sitemeta on multisite.
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$sitemeta_rows = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT meta_key FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s OR meta_key LIKE %s",
+			$site_transient_pattern,
+			$transient_pattern
+		)
 	);
-	$rows  = $wpdb->get_col( $query );
-	if ( ! empty( $rows ) ) {
-		foreach ( $rows as $option_name ) {
+
+	if ( ! empty( $sitemeta_rows ) ) {
+		foreach ( $sitemeta_rows as $meta_key ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->delete( $wpdb->sitemeta, [ 'meta_key' => $meta_key ] );
+		}
+	}
+
+	// Also check wp_options as a fallback (e.g. single-site transients or
+	// environments that were converted from single-site to multisite).
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$option_rows = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+			$site_transient_pattern,
+			$transient_pattern
+		)
+	);
+
+	if ( ! empty( $option_rows ) ) {
+		foreach ( $option_rows as $option_name ) {
 			delete_option( $option_name );
 		}
 	}
+
 	update_site_option( $done_flag, time() );
 }
