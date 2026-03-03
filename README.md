@@ -25,6 +25,20 @@ composer require soderlind/all-sites-cron
 **Updates**
    * Plugin [updates are handled automatically](https://github.com/soderlind/wordpress-plugin-github-updater#readme) via GitHub. No need to manually download and install updates.
 
+## 🏗 Architecture (v2.0.0)
+
+The plugin is organised as a thin orchestrator (`all-sites-cron.php`) backed by five focused classes under `src/`:
+
+| Class | Responsibility |
+|-------|---------------|
+| `Lock` | Atomic execution lock (`wp_cache_add` / `INSERT IGNORE`) |
+| `Redis_Queue` | Redis job queue with connection lifecycle and retry tracking |
+| `Cron_Runner` | Batched `get_sites()` iteration and fire-and-forget `wp_remote_post` |
+| `Auth` | Optional shared-secret authentication (Bearer header / `?token=`) |
+| `Response` | REST response builders and connection-close helpers |
+
+All classes live in the `Soderlind\Multisite\AllSitesCron` namespace and are autoloaded via Composer PSR-4.
+
 ## 🔧 Configuration
 
 The plugin exposes a REST API route that triggers cron across your network.
@@ -106,6 +120,28 @@ jobs:
 
 **Note:** Using `defer=1` is recommended for GitHub Actions to prevent timeout errors on large networks.
 
+## 🔒 Authentication (Optional)
+
+By default the REST endpoints are public (backward-compatible). To require a shared-secret token:
+
+1. Define the token in `wp-config.php`:
+   ```php
+   define( 'ALL_SITES_CRON_AUTH_TOKEN', 'your-long-random-secret' );
+   ```
+   Or store it as a site option: `update_site_option( 'all_sites_cron_auth_token', 'your-secret' );`
+
+2. Pass the token with requests:
+   ```bash
+   # Bearer header (preferred)
+   curl -H "Authorization: Bearer your-long-random-secret" \
+     https://example.com/wp-json/all-sites-cron/v1/run
+
+   # Query parameter
+   curl "https://example.com/wp-json/all-sites-cron/v1/run?token=your-long-random-secret"
+   ```
+
+When no token is configured the endpoints remain open.
+
 ## Customization
 
 ### Filters
@@ -151,10 +187,20 @@ Request timeout:
 add_filter( 'all_sites_cron_request_timeout', fn( $timeout ) => 0.05 ); // 50ms per site dispatch
 ```
 
-Force Redis (or disable):
+#### `all_sites_cron_require_auth`
+
+Control whether authentication is required for REST endpoints.
+
+- **Type**: `bool`
+- **Default**: `true` when a token is configured, `false` otherwise
+- **New in**: v2.0.0
+
 ```php
-add_filter( 'all_sites_cron_use_redis_queue', fn( $use ) => true );
+// Force authentication even without a stored token
+add_filter( 'all_sites_cron_require_auth', '__return_true' );
 ```
+
+#### `https_local_ssl_verify`
 
 Redis connection:
 ```php
@@ -280,7 +326,7 @@ Headers include: `Retry-After: <seconds>`.
 
 ## Copyright and License
 
-All Sites Cron is copyright 2024 Per Soderlind
+All Sites Cron is copyright 2024–2025 Per Soderlind
 
 All Sites Cron is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version.
 

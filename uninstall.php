@@ -47,13 +47,34 @@ function all_sites_cron_uninstall_cleanup() {
 		$wpdb->esc_like( '_transient_timeout_all_sites_cron_' ) . '%',
 	];
 
-	// Remove all matching options in batches.
+	// On multisite, network site-transients live in wp_sitemeta.
 	foreach ( $patterns as $pattern ) {
-		$query   = $wpdb->prepare(
-			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
-			$pattern
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$meta_keys = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT meta_key FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s",
+				$pattern
+			)
 		);
-		$options = $wpdb->get_col( $query );
+
+		if ( ! empty( $meta_keys ) ) {
+			foreach ( $meta_keys as $meta_key ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$wpdb->delete( $wpdb->sitemeta, [ 'meta_key' => $meta_key ] );
+			}
+		}
+	}
+
+	// Also check wp_options as a fallback (e.g. single-site transients or
+	// environments that were converted from single-site to multisite).
+	foreach ( $patterns as $pattern ) {
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$options = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$pattern
+			)
+		);
 
 		if ( ! empty( $options ) ) {
 			foreach ( $options as $option_name ) {

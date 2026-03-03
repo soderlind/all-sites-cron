@@ -1,0 +1,19 @@
+{
+	"redefinable-internals": [
+		"error_log",
+		"header",
+		"headers_sent",
+		"flush",
+		"set_time_limit",
+		"function_exists",
+		"defined",
+		"extension_loaded",
+		"ignore_user_abort",
+		"ob_get_level",
+		"ob_end_clean",
+		"ob_start",
+		"ob_get_length",
+		"ob_end_flush",
+		"hash_equals"
+	]
+}

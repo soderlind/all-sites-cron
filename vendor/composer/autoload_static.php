@@ -10,6 +10,20 @@ class ComposerStaticInit80bf23776f4e17997fc93ea93ea25dae
         'f6d4f6bcee7247df6b777884c3e22f98' => __DIR__ . '/..' . '/yahnis-elsts/plugin-update-checker/load-v5p6.php',
     );
 
+    public static $prefixLengthsPsr4 = array (
+        'S' => 
+        array (
+            'Soderlind\\Multisite\\AllSitesCron\\' => 33,
+        ),
+    );
+
+    public static $prefixDirsPsr4 = array (
+        'Soderlind\\Multisite\\AllSitesCron\\' => 
+        array (
+            0 => __DIR__ . '/../..' . '/src',
+        ),
+    );
+
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
     );
@@ -17,6 +31,8 @@ class ComposerStaticInit80bf23776f4e17997fc93ea93ea25dae
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
+            $loader->prefixLengthsPsr4 = ComposerStaticInit80bf23776f4e17997fc93ea93ea25dae::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit80bf23776f4e17997fc93ea93ea25dae::$prefixDirsPsr4;
             $loader->classMap = ComposerStaticInit80bf23776f4e17997fc93ea93ea25dae::$classMap;
 
         }, null, ClassLoader::class);

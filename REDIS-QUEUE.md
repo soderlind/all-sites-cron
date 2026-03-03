@@ -27,7 +27,7 @@ add_filter( 'all_sites_cron_use_redis_queue', '__return_false' );
 - **Scalability**: Multiple worker processes can consume jobs from the queue
 - **Visibility**: You can monitor queue length and processing status
 - **Decoupling**: Web requests complete instantly while workers process jobs independently
-- **Retry Logic**: Failed jobs can be easily re-queued (when implemented)
+- **Retry Logic**: Failed jobs are automatically re-queued (up to 3 attempts) before being discarded
 
 ## Requirements
 
@@ -345,9 +345,9 @@ add_filter( 'all_sites_cron_batch_size', function() {
 
 ## Security Notes
 
-- The `/process-queue` endpoint is public (like `/run`)
-- Rate limiting and locking still apply to prevent abuse
-- Consider adding authentication if exposing to the internet
+- The `/process-queue` endpoint is public by default (like `/run`)
+- **Authentication (v2.0.0):** Optionally protect endpoints with a shared-secret token — define `ALL_SITES_CRON_AUTH_TOKEN` in `wp-config.php`
+- Rate limiting and atomic locking still apply to prevent abuse
 - Use Redis authentication (`requirepass`) in production
 
 ## Summary
