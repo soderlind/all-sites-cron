@@ -1,0 +1,34 @@
+{
+  "name": "all-sites-cron",
+  "version": "1.0.0",
+  "description": "Run wp-cron on all public sites in a multisite network ([REST API based](#benefits-of-rest-mode)).",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "composer test",
+    "prepare": "husky",
+    "i18n": "npm run i18n:make-pot && npm run i18n:update-po && npm run i18n:make-mo && npm run i18n:make-json && npm run i18n:make-php",
+    "i18n:make-pot": "wp i18n make-pot . languages/all-sites-cron.pot --exclude=node_modules,vendor,tests,build --domain=all-sites-cron",
+    "i18n:update-po": "wp i18n update-po languages/all-sites-cron.pot languages/",
+    "i18n:make-mo": "wp i18n make-mo languages/",
+    "i18n:make-json": "wp i18n make-json languages/ --no-purge --use-map=i18n-map.json",
+    "i18n:make-php": "wp i18n make-php languages/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soderlind/all-sites-cron.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/soderlind/all-sites-cron/issues"
+  },
+  "homepage": "https://github.com/soderlind/all-sites-cron#readme",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
