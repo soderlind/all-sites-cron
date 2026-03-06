@@ -40,7 +40,7 @@
 		"brain/monkey": "^2.6"
 	},
 	"scripts": {
-		"test": "phpunit"
+		"test": "vendor/bin/phpunit"
 	},
 	"config": {
 		"allow-plugins": {
