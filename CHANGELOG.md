@@ -1,5 +1,13 @@
 ## ⚙️ Changelog
 
+### 2.2.0 - 2026-07-23
+
+- Return proper HTTP status codes in sync mode (200 success, 207 partial failure, 500 failure).
+- Skip rate-limit cooldown when no sites were processed, allowing immediate retry.
+- Fix deprecated `execute_and_cleanup()` wrapper releasing unowned locks.
+- Use idiomatic `$site->siteurl` property access.
+- Add `.gitignore`, `i18n-map.json`; fix phpunit path.
+
 ### 2.0.0 - 2025-10-15
 
 **Major refactoring** — the 781-line monolith has been split into a thin orchestrator and five focused classes under `src/`.

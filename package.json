@@ -1,6 +1,6 @@
 {
   "name": "all-sites-cron",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "description": "Run wp-cron on all public sites in a multisite network ([REST API based](#benefits-of-rest-mode)).",
   "main": "index.js",
   "directories": {

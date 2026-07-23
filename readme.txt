@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron,redis
 Requires at least: 6.7
 Tested up to: 7.0
-Stable tag: 2.1.0
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,13 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 2.2.0 =
+* Return proper HTTP status codes in sync mode (200 success, 207 partial failure, 500 failure)
+* Skip rate-limit cooldown when no sites were processed, allowing immediate retry
+* Fix deprecated execute_and_cleanup() wrapper releasing unowned locks
+* Use idiomatic $site->siteurl property access
+* Add .gitignore, i18n-map.json; fix phpunit path
 
 = 2.0.0 =
 * Major architecture refactoring: extracted Lock, Redis_Queue, Cron_Runner, Auth, and Response classes under src/
