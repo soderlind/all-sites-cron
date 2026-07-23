@@ -1,5 +1,11 @@
 ## ⚙️ Changelog
 
+### 2.2.1 - 2026-07-23
+
+- Fix `/process-queue` returning HTTP 500 for partial failures (now 207).
+- Cache `home_url()` and SSL verify filter outside the site loop for performance.
+- Add missing `count` key to early-return arrays for consistent response shape.
+
 ### 2.2.0 - 2026-07-23
 
 - Return proper HTTP status codes in sync mode (200 success, 207 partial failure, 500 failure).

@@ -3,7 +3,7 @@ Contributors: PerS
 Tags: cron, multisite, wp-cron,redis
 Requires at least: 6.7
 Tested up to: 7.0
-Stable tag: 2.2.0
+Stable tag: 2.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,11 @@ Plugin updates are handled automatically via GitHub. No need to manually downloa
 
 
 == Changelog ==
+
+= 2.2.1 =
+* Fix /process-queue returning HTTP 500 for partial failures (now 207)
+* Cache home_url() and SSL verify filter outside the site loop for performance
+* Add missing count key to early-return arrays for consistent response shape
 
 = 2.2.0 =
 * Return proper HTTP status codes in sync mode (200 success, 207 partial failure, 500 failure)

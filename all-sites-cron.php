@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version: 2.2.0
+ * Version: 2.2.1
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -312,7 +312,10 @@ function rest_process_queue(): \WP_REST_Response {
 	$runner = new Cron_Runner();
 	$result = $runner->execute_and_cleanup( $job[ 'timestamp' ], $lock );
 
-	return new \WP_REST_Response( $result, $result[ 'success' ] ? 200 : 500 );
+	$error_code = $result[ 'error_code' ] ?? '';
+	$status     = ! empty( $result[ 'success' ] ) ? 200 : ( 'PARTIAL_FAILURE' === $error_code ? 207 : 500 );
+
+	return new \WP_REST_Response( $result, $status );
 }
 
 // ---------------------------------------------------------------------------
