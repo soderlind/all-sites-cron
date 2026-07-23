@@ -10,7 +10,7 @@
  * Plugin Name: All Sites Cron
  * Plugin URI: https://github.com/soderlind/all-sites-cron
  * Description: Run wp-cron on all public sites in a multisite network via REST API.
- * Version: 2.1.0
+ * Version: 2.2.0
  * Author: Per Soderlind
  * Author URI: https://soderlind.no
  * License: GPL-2.0+
@@ -231,25 +231,29 @@ function rest_run( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 	// Standard synchronous mode.
 	$result = $runner->execute_and_cleanup( $now_gmt, $lock );
 
+	$success    = ! empty( $result[ 'success' ] );
+	$error_code = $result[ 'error_code' ] ?? '';
+	$status     = $success ? 200 : ( 'PARTIAL_FAILURE' === $error_code ? 207 : 500 );
+
 	if ( $ga_mode ) {
-		$message = empty( $result[ 'success' ] )
-			? $result[ 'message' ]
-			: sprintf(
+		$message = $success
+			? sprintf(
 				/* translators: %d: number of sites */
-				__( 'Running wp-cron on %d sites', 'all-sites-cron' ),
+				__( 'Ran wp-cron on %d sites', 'all-sites-cron' ),
 				$result[ 'count' ]
-			);
-		return Response::create( true, $message, 200 );
+			)
+			: $result[ 'message' ];
+		return Response::create( true, $message, $status );
 	}
 
 	$payload = [
-		'success'   => (bool) ( $result[ 'success' ] ?? false ),
+		'success'   => $success,
 		'count'     => (int) ( $result[ 'count' ] ?? 0 ),
 		'message'   => (string) ( $result[ 'message' ] ?? '' ),
 		'timestamp' => gmdate( 'Y-m-d H:i:s', $now_gmt ),
 		'endpoint'  => 'rest',
 	];
-	return new \WP_REST_Response( $payload, 200 );
+	return new \WP_REST_Response( $payload, $status );
 }
 
 // ---------------------------------------------------------------------------
@@ -404,7 +408,18 @@ function run_cron_on_all_sites(): array {
  * @return array
  */
 function execute_and_cleanup( int $timestamp ): array {
-	$lock = new Lock();
+	$lock        = new Lock();
+	$lock_result = $lock->acquire();
+
+	if ( is_wp_error( $lock_result ) ) {
+		return [
+			'success'    => false,
+			'message'    => $lock_result->get_error_message(),
+			'count'      => 0,
+			'error_code' => 'LOCK_HELD',
+		];
+	}
+
 	return ( new Cron_Runner() )->execute_and_cleanup( $timestamp, $lock );
 }
 

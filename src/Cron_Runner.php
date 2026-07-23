@@ -51,7 +51,7 @@ class Cron_Runner {
 			}
 
 			foreach ( $sites as $site ) {
-				$url      = $site->__get( 'siteurl' );
+				$url      = $site->siteurl;
 				$cron_url = $url . '/wp-cron.php?doing_wp_cron=' . $doing_wp_cron;
 				$response = wp_remote_post( $cron_url, [
 					'timeout'    => $timeout,
@@ -127,11 +127,14 @@ class Cron_Runner {
 		try {
 			$result = $this->run_all_sites();
 
-			set_site_transient(
-				'all_sites_cron_last_run_ts',
-				$timestamp,
-				$cooldown > 0 ? $cooldown : ALL_SITES_CRON_DEFAULT_COOLDOWN
-			);
+			// Only set rate-limit transient when at least some sites were processed.
+			if ( ! empty( $result[ 'count' ] ) ) {
+				set_site_transient(
+					'all_sites_cron_last_run_ts',
+					$timestamp,
+					$cooldown > 0 ? $cooldown : ALL_SITES_CRON_DEFAULT_COOLDOWN
+				);
+			}
 
 			if ( empty( $result[ 'success' ] ) && ! empty( $result[ 'message' ] ) ) {
 				$error_code = $result[ 'error_code' ] ?? 'EXECUTION_FAILED';
