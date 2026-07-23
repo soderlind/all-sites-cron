@@ -25,6 +25,7 @@ class Cron_Runner {
 			return [
 				'success' => false,
 				'message' => __( 'This plugin requires WordPress Multisite', 'all-sites-cron' ),
+				'count'   => 0,
 			];
 		}
 
@@ -34,6 +35,8 @@ class Cron_Runner {
 		$timeout       = get_filter( 'all_sites_cron_request_timeout', 'dss_cron_request_timeout', ALL_SITES_CRON_DEFAULT_TIMEOUT );
 		$batch_size    = (int) apply_filters( 'all_sites_cron_batch_size', ALL_SITES_CRON_DEFAULT_BATCH_SIZE );
 		$max_sites     = (int) get_filter( 'all_sites_cron_number_of_sites', 'dss_cron_number_of_sites', ALL_SITES_CRON_DEFAULT_MAX_SITES );
+		$ssl_verify    = (bool) apply_filters( 'https_local_ssl_verify', false );
+		$user_agent    = 'All Sites Cron; ' . home_url( '/' );
 		$offset        = 0;
 
 		do {
@@ -56,8 +59,8 @@ class Cron_Runner {
 				$response = wp_remote_post( $cron_url, [
 					'timeout'    => $timeout,
 					'blocking'   => false,
-					'sslverify'  => apply_filters( 'https_local_ssl_verify', false ),
-					'user-agent' => 'All Sites Cron; ' . home_url( '/' ),
+					'sslverify'  => $ssl_verify,
+					'user-agent' => $user_agent,
 				] );
 
 				if ( is_wp_error( $response ) ) {
@@ -85,6 +88,7 @@ class Cron_Runner {
 			return [
 				'success' => false,
 				'message' => __( 'No public sites found in the network', 'all-sites-cron' ),
+				'count'   => 0,
 			];
 		}
 

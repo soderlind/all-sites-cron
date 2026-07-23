@@ -312,7 +312,10 @@ function rest_process_queue(): \WP_REST_Response {
 	$runner = new Cron_Runner();
 	$result = $runner->execute_and_cleanup( $job[ 'timestamp' ], $lock );
 
-	return new \WP_REST_Response( $result, $result[ 'success' ] ? 200 : 500 );
+	$error_code = $result[ 'error_code' ] ?? '';
+	$status     = ! empty( $result[ 'success' ] ) ? 200 : ( 'PARTIAL_FAILURE' === $error_code ? 207 : 500 );
+
+	return new \WP_REST_Response( $result, $status );
 }
 
 // ---------------------------------------------------------------------------
